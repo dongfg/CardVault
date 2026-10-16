@@ -38,9 +38,7 @@ function Runtime-Directory([string]$Cache) {
 }
 
 $cache = Join-Path $testRoot 'cache with spaces'
-$data = Join-Path $copyDirectory 'data'
-New-Item -ItemType Directory -Path $data | Out-Null
-$sentinel = Join-Path $data 'keep.txt'
+$sentinel = Join-Path $copyDirectory 'cardvault.db'
 Set-Content -LiteralPath $sentinel -Value 'persistent card data fixture' -Encoding utf8
 
 Wait-Prepare (Start-Prepare $cache)

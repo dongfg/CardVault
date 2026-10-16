@@ -16,7 +16,7 @@ fun prepareDemo(database: Path) = runBlocking {
     val store = DesktopCardStore(database) { null }
     if (Files.exists(database)) return@runBlocking
     store.initialize()
-    if (store.load().isNotEmpty()) return@runBlocking
+    store.load()
     Files.createDirectories(root)
     fun picture(file: String, theme: Int, back: Boolean = false): String {
         val image = BufferedImage(960, 604, BufferedImage.TYPE_INT_RGB)

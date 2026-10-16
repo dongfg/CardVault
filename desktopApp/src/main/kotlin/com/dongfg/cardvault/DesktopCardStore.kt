@@ -19,13 +19,11 @@ import java.nio.file.Path
 import java.security.MessageDigest
 import java.sql.Connection
 import java.time.Instant
-import java.util.Properties
 import java.util.UUID
 
 /** Persisted image references are content hashes, independent of platform paths. */
 class DesktopCardStore(
     database: Path,
-    private val legacyDirectories: List<Path> = listOf(database.toAbsolutePath().parent.resolve("data"), database.toAbsolutePath().parent),
     private val owner: () -> Frame?,
 ) : CardStore {
     val database = database.toAbsolutePath().normalize()
@@ -36,11 +34,9 @@ class DesktopCardStore(
     }
     override fun newId(): String = UUID.randomUUID().toString()
     override fun copy(text: String) { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) }
-    private fun legacyRoots() = legacyDirectories.map { it.toAbsolutePath().normalize() }.distinct()
-        .filter { Files.isRegularFile(it.resolve("cards.properties")) }
 
     private fun connect(path: Path = database, create: Boolean = false): Connection {
-        if (!create && !Files.isRegularFile(path)) throw MissingDatabaseException(database.toString(), legacyRoots().isNotEmpty())
+        if (!create && !Files.isRegularFile(path)) throw MissingDatabaseException(database.toString())
         val config = SQLiteConfig().apply {
             setBusyTimeout(5000)
             enforceForeignKeys(true)
@@ -79,9 +75,6 @@ class DesktopCardStore(
     } }
     override suspend fun initialize() = withContext(Dispatchers.IO) { mutex.withLock {
         if (Files.exists(database)) throw CardStorageException("数据库已存在，请重试读取；不会覆盖已有卡册")
-        val roots = legacyRoots()
-        if (roots.size > 1) throw CardStorageException("发现多个旧卡册，请只保留需要导入的一套旧卡册后重试")
-        val old = roots.singleOrNull()?.let(::readLegacy) ?: emptyList()
         Files.createDirectories(database.parent)
         val temporary = database.resolveSibling(".cardvault-${newId()}.tmp")
         try {
@@ -94,7 +87,6 @@ class DesktopCardStore(
                     s.execute("CREATE TABLE cards (id TEXT PRIMARY KEY, name TEXT NOT NULL, number TEXT NOT NULL, note TEXT NOT NULL, front TEXT REFERENCES images(id), back TEXT REFERENCES images(id), position INTEGER NOT NULL UNIQUE)")
                 }
                 c.autoCommit = false
-                writeCards(c, old)
                 c.prepareStatement("INSERT INTO metadata VALUES ('revision', ?)").use { it.setString(1, newId()); it.executeUpdate() }
                 c.commit()
             }
@@ -169,22 +161,6 @@ class DesktopCardStore(
     private fun pruneBackups(folder: Path) {
         Files.list(folder).use { files -> files.filter { Files.isRegularFile(it) && it.fileName.toString().matches(Regex("cardvault-[0-9]+-[0-9a-f-]{36}\\.db")) }
             .sorted(compareByDescending<Path> { Files.getLastModifiedTime(it) }).skip(5).forEach { Files.deleteIfExists(it) } }
-    }
-    private fun readLegacy(root: Path): List<Card> {
-        val props = Properties().also { Files.newInputStream(root.resolve("cards.properties")).use(it::load) }
-        require(props.getProperty("version") == "1") { "旧卡册版本不受支持" }
-        val count = props.getProperty("count").toInt()
-        require(count in 0..100000)
-        return (0 until count).map { n ->
-            fun field(key: String) = requireNotNull(props.getProperty("$n.$key")) { "旧卡册字段缺失" }
-            fun picture(key: String): String? = field(key).takeIf(String::isNotBlank)?.let {
-                val images = root.resolve("images").normalize()
-                val path = images.resolve(it).normalize()
-                require(path.parent == images) { "旧卡册图片路径无效" }
-                path.toString()
-            }
-            Card(field("id"), field("name"), field("number"), field("note"), picture("front"), picture("back"))
-        }
     }
     override suspend fun pickImage(): String? {
         val selected = withContext(Dispatchers.Swing) {

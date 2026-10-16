@@ -18,20 +18,14 @@ import java.nio.file.Path
 fun main(args: Array<String>) {
     val demo = "--demo" in args
     val database = resolveDatabasePath(System.getProperty("cardvault.databasePath") ?: System.getenv("CARDVAULT_DB_PATH"),
-        System.getProperty("jpackage.app-path"), demo,
-        legacyDirectory = System.getProperty("cardvault.dataDir") ?: System.getenv("CARDVAULT_DATA_DIR"))
-    val legacy = buildList {
-        add(database.parent.resolve("data")); add(database.parent)
-        if (!demo && System.getProperty("os.name").startsWith("Mac") && System.getProperty("jpackage.app-path") != null)
-            add(Path.of(System.getProperty("user.home"), "Library", "Application Support", "CardVault", "data"))
-    }
+        System.getProperty("jpackage.app-path"), demo)
     if (demo) prepareDemo(database)
     application {
     val state = rememberWindowState(width = 440.dp, height = 860.dp, position = WindowPosition(Alignment.Center))
     val close = remember { CloseController() }
     Window(onCloseRequest = { close.request() }, title = "CardVault", state = state, undecorated = true) {
         window.minimumSize = Dimension(360, 620)
-        val store = remember { DesktopCardStore(database, legacy) { window } }
+        val store = remember { DesktopCardStore(database) { window } }
         VaultTheme {
             Column(Modifier.fillMaxSize().background(VaultBackground).border(1.dp, VaultBorder)) {
                 Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -54,10 +48,8 @@ fun main(args: Array<String>) {
 internal fun resolveDatabasePath(
     override: String?, executable: String?, demo: Boolean,
     osName: String = System.getProperty("os.name"),
-    legacyDirectory: String? = null,
 ): Path = when {
     override != null -> Path.of(override)
-    legacyDirectory != null -> Path.of(legacyDirectory).resolve("cardvault.db")
     demo -> Path.of("build/demo-data/cardvault.db")
     executable != null && osName.startsWith("Mac", ignoreCase = true) -> {
         val app = generateSequence(Path.of(executable).toAbsolutePath()) { it.parent }

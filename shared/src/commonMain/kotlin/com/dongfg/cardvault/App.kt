@@ -112,9 +112,9 @@ fun App(store: CardStore, closeController: CloseController, closeWindow: () -> U
                                     val missing = missingDatabase!!
                                     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
                                         Box(Modifier.weight(1f)) {
-                                            EmptyState(if (missing.hasLegacyData) "发现旧版卡册" else "尚未找到卡册",
-                                                "${missing.location}\n\n已有卡册请等待同步完成后重试。" + if (missing.hasLegacyData) "\n导入会保留旧版文件。" else "首次使用可创建新卡册。",
-                                                if (busy) "处理中…" else if (missing.hasLegacyData) "导入旧卡册" else "创建新卡册") {
+                                            EmptyState("尚未找到卡册",
+                                                "${missing.location}\n\n已有卡册请等待同步完成后重试。首次使用可创建新卡册。",
+                                                if (busy) "处理中…" else "创建新卡册") {
                                                 if (!busy) scope.launch {
                                                     busy = true
                                                     try { store.initialize(); load() }

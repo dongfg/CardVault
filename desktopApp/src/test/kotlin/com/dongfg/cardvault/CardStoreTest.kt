@@ -5,7 +5,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
 import java.awt.image.BufferedImage
-import java.util.Properties
 import javax.imageio.ImageIO
 import kotlin.test.*
 
@@ -31,7 +30,6 @@ class CardStoreTest {
         assertEquals(directory.resolve("cardvault.db"), resolveDatabasePath(null, directory.resolve("CardVault.app/Contents/MacOS/CardVault").toString(), false, "Mac OS X"))
         assertEquals(directory.resolve("cardvault.db"), resolveDatabasePath(null, directory.resolve("CardVault.app").toString(), false, "Mac OS X"))
         assertEquals(directory.resolve("custom.db"), resolveDatabasePath(directory.resolve("custom.db").toString(), null, false))
-        assertEquals(directory.resolve("cardvault.db"), resolveDatabasePath(null, null, false, legacyDirectory = directory.toString()))
         assertEquals(Path.of("build/demo-data/cardvault.db").toAbsolutePath(), resolveDatabasePath(null, "ignored.exe", true))
         assertEquals(Path.of("cardvault.db").toAbsolutePath(), resolveDatabasePath(null, null, false))
     }
@@ -44,7 +42,7 @@ class CardStoreTest {
         val db = root.resolve("cardvault.db")
         val store = store(db)
         val error = assertFailsWith<MissingDatabaseException> { store.load() }
-        assertEquals(db.toString(), error.location); assertFalse(error.hasLegacyData); assertFalse(Files.exists(db))
+        assertEquals(db.toString(), error.location); assertFalse(Files.exists(db))
         assertFailsWith<MissingDatabaseException> { store.save(emptyList()) }
         store.initialize(); assertTrue(store.load().isEmpty())
         assertFailsWith<CardStorageException> { store.initialize() }
@@ -122,31 +120,6 @@ class CardStoreTest {
         assertEquals(10, backupStore.image(first.single().front!!).width)
         repeat(7) { store.save(listOf(first.single().copy(note = "$it"))) }
         Files.list(root.resolve("backups")).use { assertEquals(5L, it.count()) }
-    }
-    private fun legacy(root: Path, front: String) {
-        Files.createDirectories(root.resolve("images"))
-        val props = Properties()
-        mapOf("version" to "1", "count" to "1", "0.id" to "old", "0.name" to "旧卡册", "0.number" to "1234", "0.note" to "备注\n第二行", "0.front" to front, "0.back" to "").forEach { (k,v) -> props.setProperty(k,v) }
-        Files.newOutputStream(root.resolve("cards.properties")).use { props.store(it, "legacy") }
-    }
-    @Test fun legacyImportKeepsOriginalFilesAndEmbedsImages() = temporary { root ->
-        val old = root.resolve("data"); legacy(old, "front.png")
-        val image = picture(old.resolve("images/front.png"))
-        val db = root.resolve("cardvault.db"); val store = store(db)
-        assertTrue(assertFailsWith<MissingDatabaseException> { store.load() }.hasLegacyData)
-        store.initialize()
-        val card = store.load().single(); assertEquals("旧卡册", card.name); assertEquals("备注\n第二行", card.note)
-        assertTrue(Files.exists(old.resolve("cards.properties"))); assertTrue(Files.exists(Path.of(image)))
-        Files.delete(Path.of(image)); assertEquals(10, store.image(card.front!!).width)
-    }
-    @Test fun brokenLegacyImportLeavesNoPartialDatabase() = temporary { root ->
-        val old = root.resolve("data"); legacy(old, "missing.png")
-        val db = root.resolve("cardvault.db")
-        assertFails { store(db).initialize() }; assertFalse(Files.exists(db))
-        assertTrue(Files.exists(old.resolve("cards.properties")))
-        legacy(old, "../outside.png")
-        assertFails { store(db).initialize() }; assertFalse(Files.exists(db))
-        Files.list(root).use { assertFalse(it.anyMatch { p -> p.fileName.toString().startsWith(".cardvault-") }) }
     }
     @Test fun demoSeedsEmbeddedPicturesOnceAndKeepsEdits() = temporary { root ->
         val db = root.resolve("demo/cardvault.db")

@@ -19,7 +19,6 @@ captures
 node_modules/
 
 # Local card collections
-data/
 demo-data/
 cardvault.db
 cardvault.db-journal

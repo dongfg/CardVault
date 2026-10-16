@@ -14,7 +14,7 @@ interface CardStore {
     fun copy(text: String)
 }
 
-class MissingDatabaseException(val location: String, val hasLegacyData: Boolean) : Exception("找不到卡册数据库")
+class MissingDatabaseException(val location: String) : Exception("找不到卡册数据库")
 class CardStorageException(message: String) : Exception(message)
 
 fun maskedNumber(number: String): String {

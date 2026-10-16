@@ -46,9 +46,7 @@ OneDrive/CardVault/
 
 同一时刻只在一台设备上使用。切换前关闭应用，等待 OneDrive 上传完成；另一台设备确认数据库已下载、同步完成后再打开。使用 DELETE 日志模式，保存事务完成后关闭连接；不要在写入过程中手动复制数据库。OneDrive 负责文件同步，应用本身不合并同步冲突。
 
-旧版 `data/cards.properties` 和 `data/images/` 会被识别，点击「导入旧卡册」后转换为数据库，原文件保留。也支持数据库同级的旧版文件，以及 macOS 旧位置 `~/Library/Application Support/CardVault/data/`。发现多套旧卡册时会提示整理后重试。
-
-恢复备份时，先关闭应用，保留当前数据库，再将所需 `backups/cardvault-*.db` 复制为应用旁的 `cardvault.db`。可用环境变量 `CARDVAULT_DB_PATH` 指定完整数据库路径；旧变量 `CARDVAULT_DATA_DIR` 对应目录内的 `cardvault.db`。
+恢复备份时，先关闭应用，保留当前数据库，再将所需 `backups/cardvault-*.db` 复制为应用旁的 `cardvault.db`。可用环境变量 `CARDVAULT_DB_PATH` 指定完整数据库路径。
 
 预览图片列表，可运行独立演示卡册：
 
@@ -89,7 +87,7 @@ GitHub Actions 仅手动触发：打开 **Actions → Build desktop packages →
 
 验证 ProGuard 裁剪后的存储功能（不生成分发包）：`.\gradlew.bat :desktopApp:testRelease`。
 
-测试覆盖路径定位、数据库创建、图片 BLOB、单库迁移、事务回滚、过期写入保护、备份、旧版导入、搜索和短卡号掩码。
+测试覆盖路径定位、数据库创建、图片 BLOB、单库跨目录读取、事务回滚、过期写入保护、备份、搜索和短卡号掩码。
 
 ## 结构
 
