@@ -17,3 +17,13 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
+
+# Local card collections
+data/
+demo-data/
+
+# JVM crash reports, heap dumps, and recordings
+hs_err_pid*.log
+replay_pid*.log
+*.hprof
+*.jfr

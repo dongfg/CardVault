@@ -1,4 +1,5 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.kotlinJvm)
@@ -6,13 +7,16 @@ plugins {
     alias(libs.plugins.composeCompiler)
 }
 
+val appVersion = "1.0.0"
+
 dependencies {
     implementation(project(":shared"))
 
     implementation(compose.desktop.currentOs)
+    implementation(libs.compose.material3)
     implementation(libs.kotlinx.coroutinesSwing)
 
-    implementation(libs.compose.uiToolingPreview)
+    testImplementation(kotlin("test"))
 }
 
 compose.desktop {
@@ -20,9 +24,81 @@ compose.desktop {
         mainClass = "com.dongfg.cardvault.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "com.dongfg.cardvault"
-            packageVersion = "1.0.0"
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb)
+            packageName = "CardVault"
+            packageVersion = appVersion
+            description = "A personal card collection"
+            vendor = "dongfg"
+            modules("java.desktop", "java.logging", "java.instrument", "jdk.unsupported")
+            windows {
+                perUserInstall = true
+                dirChooser = true
+                shortcut = true
+                menu = true
+                upgradeUuid = "fb338c96-f46d-4fc3-b38d-8c7650f345ae"
+            }
         }
+    }
+}
+
+tasks.withType<JavaExec>().configureEach {
+    workingDir = rootProject.projectDir
+}
+
+if (System.getProperty("os.name").startsWith("Windows")) {
+    val architecture = when (val arch = System.getProperty("os.arch")) {
+        "amd64", "x86_64" -> "x64"
+        "aarch64" -> "arm64"
+        else -> arch
+    }
+    val portableZip = tasks.register<Zip>("packagePortableZip") {
+        group = "distribution"
+        description = "Build a Windows portable ZIP including the Java runtime"
+        dependsOn("createDistributable")
+        from(layout.buildDirectory.dir("compose/binaries/main/app/CardVault")) {
+            into("CardVault")
+        }
+        destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+        archiveFileName.set("CardVault-$appVersion-windows-$architecture.zip")
+    }
+
+    val source = layout.projectDirectory.file("packaging/windows/SingleFileLauncher.cs").asFile
+    val manifest = layout.projectDirectory.file("packaging/windows/launcher.manifest").asFile
+    val payload = layout.buildDirectory.file("distributions/CardVault-$appVersion-windows-$architecture.zip").get().asFile
+    val hashFile = layout.buildDirectory.file("single-file/payload.sha256").get().asFile
+    val singleExe = layout.buildDirectory.file("distributions/CardVault-$appVersion-windows-$architecture-single.exe").get().asFile
+    val framework = File(System.getenv("WINDIR") ?: "C:/Windows", "Microsoft.NET/Framework64/v4.0.30319")
+        .let { if (File(it, "csc.exe").exists()) it else File(it.parentFile.parentFile, "Framework/v4.0.30319") }
+
+    tasks.register<Exec>("packageSingleExe") {
+        group = "distribution"
+        description = "Build one self-extracting Windows EXE with a reusable runtime cache"
+        dependsOn(portableZip)
+        inputs.files(source, manifest, payload)
+        outputs.file(singleExe)
+        doFirst {
+            hashFile.parentFile.mkdirs()
+            singleExe.parentFile.mkdirs()
+            val digest = MessageDigest.getInstance("SHA-256")
+            payload.inputStream().use { input ->
+                val buffer = ByteArray(1024 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            hashFile.writeText(digest.digest().joinToString("") { "%02x".format(it) })
+        }
+        commandLine(
+            File(framework, "csc.exe").absolutePath,
+            "/nologo", "/target:winexe", "/platform:anycpu", "/optimize+", "/debug-", "/utf8output",
+            "/out:${singleExe.absolutePath}", "/win32manifest:${manifest.absolutePath}",
+            "/reference:${File(framework, "System.IO.Compression.dll").absolutePath}",
+            "/reference:${File(framework, "System.Windows.Forms.dll").absolutePath}",
+            "/resource:${payload.absolutePath},CardVault.Payload",
+            "/resource:${hashFile.absolutePath},CardVault.PayloadHash",
+            source.absolutePath,
+        )
     }
 }
