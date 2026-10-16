@@ -1,13 +1,9 @@
 name: Build desktop packages
 
 on:
-  workflow_dispatch:
-    inputs:
-      publish_release:
-        description: Publish the three packages to a GitHub Release
-        required: true
-        type: boolean
-        default: false
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: read
@@ -24,26 +20,24 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - name: Read application version
+      - name: Read version from tag
         id: version
         shell: bash
         run: |
-          version="$(tr -d '\r' < desktopApp/build.gradle.kts | sed -n 's/^val appVersion = "\([0-9.]*\)"$/\1/p')"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo 'appVersion must have the form MAJOR.MINOR.PATCH' >&2
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Tag must have the form vMAJOR.MINOR.PATCH, for example v1.0.1' >&2
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.target }}
     needs: metadata
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    env:
+      CARDVAULT_BUILD_VERSION: ${{ needs.metadata.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
@@ -76,7 +70,7 @@ jobs:
       - name: Test and build Windows single EXE
         if: runner.os == 'Windows'
         shell: pwsh
-        run: .\gradlew.bat :desktopApp:test :desktopApp:testRelease :desktopApp:packageSingleExe --console=plain --stacktrace
+        run: .\gradlew.bat :desktopApp:test :desktopApp:testRelease :desktopApp:packageSingleExe "-PcardvaultVersion=$env:CARDVAULT_BUILD_VERSION" --console=plain --stacktrace
       - name: Verify Windows self-extraction
         if: runner.os == 'Windows'
         shell: pwsh
@@ -87,7 +81,7 @@ jobs:
       - name: Test and build macOS DMG
         if: runner.os == 'macOS'
         shell: bash
-        run: bash ./gradlew :desktopApp:test :desktopApp:testRelease :desktopApp:packageReleaseDmg --console=plain --stacktrace
+        run: bash ./gradlew :desktopApp:test :desktopApp:testRelease :desktopApp:packageReleaseDmg "-PcardvaultVersion=$CARDVAULT_BUILD_VERSION" --console=plain --stacktrace
       - name: Prepare download filename
         shell: bash
         env:
@@ -115,7 +109,6 @@ jobs:
 
   release:
     name: Publish release
-    if: inputs.publish_release
     needs: [metadata, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -138,6 +131,6 @@ jobs:
           test -f release-assets/CardVault-macos-arm64.dmg
           gh release create "$RELEASE_TAG" release-assets/* \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
+            --verify-tag \
             --title "CardVault $RELEASE_TAG" \
             --generate-notes --latest

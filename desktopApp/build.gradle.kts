@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.composeCompiler)
 }
 
-val appVersion = "1.0.0"
+val appVersion = providers.gradleProperty("cardvaultVersion").get()
 val sqlitePlatform = when {
     System.getProperty("os.name").startsWith("Windows") -> "windows"
     System.getProperty("os.name").startsWith("Mac") -> "mac"

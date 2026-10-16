@@ -18,7 +18,7 @@
 | macOS Intel | [DMG](https://github.com/dongfg/CardVault/releases/latest/download/CardVault-macos-x64.dmg) |
 | macOS Apple Silicon | [DMG](https://github.com/dongfg/CardVault/releases/latest/download/CardVault-macos-arm64.dmg) |
 
-[所有版本](https://github.com/dongfg/CardVault/releases) · [手动构建与产物](https://github.com/dongfg/CardVault/actions/workflows/build-desktop.yml)
+[所有版本](https://github.com/dongfg/CardVault/releases) · [构建记录与产物](https://github.com/dongfg/CardVault/actions/workflows/build-desktop.yml)
 
 下载链接在首次发布 Release 后生效。macOS 产物目前未配置签名与公证。
 
@@ -68,7 +68,14 @@ OneDrive/CardVault/
 
 以上分发流程均使用 ProGuard 裁剪未用代码，保持多个 JAR，不做混淆；SQLite 仅携带当前操作系统的原生库。日常 `run` 和测试不裁剪。
 
-GitHub Actions 仅手动触发：打开 **Actions → Build desktop packages → Run workflow**，分别构建 Windows x64、macOS Intel 和 Apple Silicon，产物保留 30 天。勾选 `publish_release` 后，全部构建成功才会发布到 Release；版本取自 `desktopApp/build.gradle.kts` 中的 `appVersion`，已存在的 Release 不会被覆盖。
+推送 `v主版本.次版本.补丁号` 标签后，GitHub Actions 自动构建 Windows x64、macOS Intel 和 Apple Silicon，并在全部成功后发布 Release。版本直接读取标签，例如 `v1.0.1` 对应安装包版本 `1.0.1`；产物保留 30 天，已有 Release 不会被覆盖。
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+本地构建默认使用 `gradle.properties` 中的 `cardvaultVersion`，可通过 `"-PcardvaultVersion=1.0.1"` 指定版本。
 
 ## 功能
 
