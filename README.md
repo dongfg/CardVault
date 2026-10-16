@@ -65,8 +65,10 @@ OneDrive/CardVault/
 | 平台 | 命令 | 输出目录 |
 | --- | --- | --- |
 | Windows | `.\gradlew.bat :desktopApp:packageSingleExe` | `desktopApp/build/distributions/`（`CardVault-<版本>-windows-<架构>-single.exe`） |
-| macOS | `bash ./gradlew :desktopApp:packageDmg` | `desktopApp/build/compose/binaries/main/dmg/` |
-| Linux | `bash ./gradlew :desktopApp:packageDeb` | `desktopApp/build/compose/binaries/main/deb/` |
+| macOS | `bash ./gradlew :desktopApp:packageReleaseDmg` | `desktopApp/build/compose/binaries/main-release/dmg/` |
+| Linux | `bash ./gradlew :desktopApp:packageReleaseDeb` | `desktopApp/build/compose/binaries/main-release/deb/` |
+
+以上分发流程均使用 ProGuard 裁剪未用代码，保持多个 JAR，不做混淆；SQLite 仅携带当前操作系统的原生库。日常 `run` 和测试不裁剪。
 
 GitHub Actions 仅手动触发：打开 **Actions → Build desktop packages → Run workflow**，分别构建 Windows x64、macOS Intel 和 Apple Silicon，产物保留 30 天。勾选 `publish_release` 后，全部构建成功才会发布到 Release；版本取自 `desktopApp/build.gradle.kts` 中的 `appVersion`，已存在的 Release 不会被覆盖。
 
@@ -84,6 +86,8 @@ GitHub Actions 仅手动触发：打开 **Actions → Build desktop packages →
 ```powershell
 .\gradlew.bat :desktopApp:test :shared:jvmTest
 ```
+
+验证 ProGuard 裁剪后的存储功能（不生成分发包）：`.\gradlew.bat :desktopApp:testRelease`。
 
 测试覆盖路径定位、数据库创建、图片 BLOB、单库迁移、事务回滚、过期写入保护、备份、旧版导入、搜索和短卡号掩码。
 

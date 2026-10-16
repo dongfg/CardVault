@@ -56,12 +56,12 @@ jobs:
           - target: macos-x64
             runner: macos-15-intel
             java_arch: x64
-            source: desktopApp/build/compose/binaries/main/dmg/*.dmg
+            source: desktopApp/build/compose/binaries/main-release/dmg/*.dmg
             filename: CardVault-macos-x64.dmg
           - target: macos-arm64
             runner: macos-15
             java_arch: aarch64
-            source: desktopApp/build/compose/binaries/main/dmg/*.dmg
+            source: desktopApp/build/compose/binaries/main-release/dmg/*.dmg
             filename: CardVault-macos-arm64.dmg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -76,7 +76,7 @@ jobs:
       - name: Test and build Windows single EXE
         if: runner.os == 'Windows'
         shell: pwsh
-        run: .\gradlew.bat :desktopApp:test :desktopApp:packageSingleExe --console=plain --stacktrace
+        run: .\gradlew.bat :desktopApp:test :desktopApp:testRelease :desktopApp:packageSingleExe --console=plain --stacktrace
       - name: Verify Windows self-extraction
         if: runner.os == 'Windows'
         shell: pwsh
@@ -87,7 +87,7 @@ jobs:
       - name: Test and build macOS DMG
         if: runner.os == 'macOS'
         shell: bash
-        run: bash ./gradlew :desktopApp:test :desktopApp:packageDmg --console=plain --stacktrace
+        run: bash ./gradlew :desktopApp:test :desktopApp:testRelease :desktopApp:packageReleaseDmg --console=plain --stacktrace
       - name: Prepare download filename
         shell: bash
         env:

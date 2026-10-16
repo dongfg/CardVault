@@ -8,6 +8,12 @@ plugins {
 }
 
 val appVersion = "1.0.0"
+val sqlitePlatform = when {
+    System.getProperty("os.name").startsWith("Windows") -> "windows"
+    System.getProperty("os.name").startsWith("Mac") -> "mac"
+    System.getProperty("os.name").startsWith("Linux") -> "linux"
+    else -> error("Unsupported desktop platform for SQLite: ${System.getProperty("os.name")}")
+}
 
 dependencies {
     implementation(project(":shared"))
@@ -15,7 +21,8 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(libs.compose.material3)
     implementation(libs.kotlinx.coroutinesSwing)
-    implementation(libs.sqlite.jdbc)
+    implementation(variantOf(libs.sqlite.jdbc) { classifier("without-natives") })
+    runtimeOnly(variantOf(libs.sqlite.jdbc) { classifier("natives-$sqlitePlatform") })
 
     testImplementation(kotlin("test"))
 }
@@ -23,6 +30,14 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.dongfg.cardvault.MainKt"
+        buildTypes.release.proguard {
+            isEnabled.set(true)
+            obfuscate.set(false)
+            // Shrink unused code; avoid bytecode rewriting around Compose/JNI.
+            optimize.set(false)
+            joinOutputJars.set(false)
+            configurationFiles.from(project.file("proguard-rules.pro"))
+        }
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb)
@@ -47,6 +62,20 @@ tasks.withType<JavaExec>().configureEach {
     workingDir = rootProject.projectDir
 }
 
+// Run the storage regression suite against the actual shrunk application JARs.
+tasks.register<Test>("testRelease") {
+    group = "verification"
+    description = "Test ProGuard output and platform SQLite libraries without packaging"
+    dependsOn("proguardReleaseJars", "testClasses")
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    val releaseJars = tasks.named("proguardReleaseJars").map {
+        it.outputs.files.asFileTree.matching { include("**/*.jar") }
+    }
+    classpath = sourceSets["test"].output + files(releaseJars) +
+        (configurations.testRuntimeClasspath.get() - configurations.runtimeClasspath.get())
+    javaLauncher.set(tasks.named<Test>("test").flatMap { it.javaLauncher })
+}
+
 if (System.getProperty("os.name").startsWith("Windows")) {
     val architecture = when (val arch = System.getProperty("os.arch")) {
         "amd64", "x86_64" -> "x64"
@@ -56,8 +85,8 @@ if (System.getProperty("os.name").startsWith("Windows")) {
     val portableZip = tasks.register<Zip>("packagePortableZip") {
         group = "distribution"
         description = "Build a Windows portable ZIP including the Java runtime"
-        dependsOn("createDistributable")
-        from(layout.buildDirectory.dir("compose/binaries/main/app/CardVault")) {
+        dependsOn("createReleaseDistributable")
+        from(layout.buildDirectory.dir("compose/binaries/main-release/app/CardVault")) {
             into("CardVault")
         }
         from(rootProject.layout.projectDirectory.file("LICENSE")) {
