@@ -29,6 +29,7 @@ compose.desktop {
             packageVersion = appVersion
             description = "A personal card collection"
             vendor = "dongfg"
+            licenseFile.set(rootProject.layout.projectDirectory.file("LICENSE"))
             modules("java.desktop", "java.logging", "java.instrument", "jdk.unsupported")
             windows {
                 perUserInstall = true
@@ -56,6 +57,9 @@ if (System.getProperty("os.name").startsWith("Windows")) {
         description = "Build a Windows portable ZIP including the Java runtime"
         dependsOn("createDistributable")
         from(layout.buildDirectory.dir("compose/binaries/main/app/CardVault")) {
+            into("CardVault")
+        }
+        from(rootProject.layout.projectDirectory.file("LICENSE")) {
             into("CardVault")
         }
         destinationDirectory.set(layout.buildDirectory.dir("distributions"))

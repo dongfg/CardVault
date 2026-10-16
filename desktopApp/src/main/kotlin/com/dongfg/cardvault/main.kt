@@ -43,9 +43,15 @@ fun main(args: Array<String>) {
 }
 }
 
-internal fun resolveDataRoot(override: String?, executable: String?, demo: Boolean): Path = when {
+internal fun resolveDataRoot(
+    override: String?, executable: String?, demo: Boolean,
+    osName: String = System.getProperty("os.name"),
+    userHome: String = System.getProperty("user.home"),
+): Path = when {
     override != null -> Path.of(override)
     demo -> Path.of("build/demo-data")
+    executable != null && osName.startsWith("Mac", ignoreCase = true) ->
+        Path.of(userHome, "Library", "Application Support", "CardVault", "data")
     executable != null -> Path.of(executable).parent.resolve("data")
     else -> Path.of("data")
 }.toAbsolutePath().normalize()

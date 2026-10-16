@@ -9,9 +9,22 @@ import kotlin.test.*
 class CardStoreTest {
     @Test fun packagedDataLivesBesideLauncherRatherThanWorkingDirectory() {
         val launcher = java.nio.file.Path.of("portable", "CardVault.exe").toAbsolutePath()
-        assertEquals(launcher.parent.resolve("data"), resolveDataRoot(null, launcher.toString(), false))
+        assertEquals(launcher.parent.resolve("data"), resolveDataRoot(null, launcher.toString(), false, "Windows 11"))
         assertEquals(java.nio.file.Path.of("custom").toAbsolutePath(), resolveDataRoot("custom", launcher.toString(), false))
         assertEquals(java.nio.file.Path.of("build/demo-data").toAbsolutePath(), resolveDataRoot(null, launcher.toString(), true))
+    }
+
+    @Test fun macPackagedDataStaysOutsideTheApplicationBundle() {
+        val home = java.nio.file.Path.of("test-home").toAbsolutePath()
+        val launcher = "/Applications/CardVault.app/Contents/MacOS/CardVault"
+        assertEquals(home.resolve("Library/Application Support/CardVault/data"),
+            resolveDataRoot(null, launcher, false, "Mac OS X", home.toString()))
+        assertEquals(java.nio.file.Path.of("custom").toAbsolutePath(),
+            resolveDataRoot("custom", launcher, false, "Mac OS X", home.toString()))
+        assertEquals(java.nio.file.Path.of("build/demo-data").toAbsolutePath(),
+            resolveDataRoot(null, launcher, true, "Mac OS X", home.toString()))
+        assertEquals(java.nio.file.Path.of("data").toAbsolutePath(),
+            resolveDataRoot(null, null, false, "Mac OS X", home.toString()))
     }
 
     @Test fun searchAndMaskHandleRealCardFormats() {
