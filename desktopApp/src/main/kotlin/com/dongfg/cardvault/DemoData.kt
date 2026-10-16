@@ -11,9 +11,12 @@ import java.nio.file.Path
 import javax.imageio.ImageIO
 
 /** Explicit demo mode; never seeds or reads the user's normal card directory. */
-fun prepareDemo(root: Path) = runBlocking {
-    val store = DesktopCardStore(root) { null }
-    if (Files.exists(root.resolve("cards.properties"))) return@runBlocking
+fun prepareDemo(database: Path) = runBlocking {
+    val root = database.parent
+    val store = DesktopCardStore(database) { null }
+    if (Files.exists(database)) return@runBlocking
+    store.initialize()
+    if (store.load().isNotEmpty()) return@runBlocking
     Files.createDirectories(root)
     fun picture(file: String, theme: Int, back: Boolean = false): String {
         val image = BufferedImage(960, 604, BufferedImage.TYPE_INT_RGB)

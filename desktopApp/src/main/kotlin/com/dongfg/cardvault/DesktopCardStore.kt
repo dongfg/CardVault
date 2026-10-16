@@ -5,85 +5,187 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.jetbrains.skia.Image
+import org.sqlite.SQLiteConfig
+import org.sqlite.SQLiteOpenMode
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption.*
+import java.security.MessageDigest
+import java.sql.Connection
+import java.time.Instant
 import java.util.Properties
 import java.util.UUID
 
-/** Local files only. The containing directory can be placed inside an unlocked vault. */
-class DesktopCardStore(private val root: Path, private val owner: () -> Frame?) : CardStore {
-    private val index = root.resolve("cards.properties")
-    private val images = root.resolve("images")
+/** Persisted image references are content hashes, independent of platform paths. */
+class DesktopCardStore(
+    database: Path,
+    private val legacyDirectories: List<Path> = listOf(database.toAbsolutePath().parent.resolve("data"), database.toAbsolutePath().parent),
+    private val owner: () -> Frame?,
+) : CardStore {
+    val database = database.toAbsolutePath().normalize()
+    private val mutex = Mutex()
+    private var revision: String? = null
     private val cache = object : LinkedHashMap<String, ImageBitmap>(16, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap>?) = size > 12
     }
-
     override fun newId(): String = UUID.randomUUID().toString()
     override fun copy(text: String) { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) }
+    private fun legacyRoots() = legacyDirectories.map { it.toAbsolutePath().normalize() }.distinct()
+        .filter { Files.isRegularFile(it.resolve("cards.properties")) }
 
-    override suspend fun load(): List<Card> = withContext(Dispatchers.IO) {
-        if (!Files.exists(index)) return@withContext emptyList()
-        val props = Properties().also { Files.newInputStream(index).use(it::load) }
-        require(props.getProperty("version") == "1") { "Unsupported card data version" }
-        val count = props.getProperty("count").toInt()
-        require(count in 0..100000)
-        val cards = (0 until count).map { n ->
-            val prefix = "$n."
-            fun get(key: String): String = requireNotNull(props.getProperty(prefix + key)) { "Missing card field" }
-            fun picture(key: String): String? = get(key).takeIf(String::isNotBlank)?.let {
-                val resolved = images.resolve(it).normalize()
-                require(resolved.parent == images.normalize()) { "Invalid image path" }
-                resolved.toString()
-            }
-            Card(get("id"), get("name"), get("number"), get("note"), picture("front"), picture("back"))
+    private fun connect(path: Path = database, create: Boolean = false): Connection {
+        if (!create && !Files.isRegularFile(path)) throw MissingDatabaseException(database.toString(), legacyRoots().isNotEmpty())
+        val config = SQLiteConfig().apply {
+            setBusyTimeout(5000)
+            enforceForeignKeys(true)
+            setJournalMode(SQLiteConfig.JournalMode.DELETE)
+            setSynchronous(SQLiteConfig.SynchronousMode.FULL)
+            setTransactionMode(SQLiteConfig.TransactionMode.IMMEDIATE)
+            if (!create) resetOpenMode(SQLiteOpenMode.CREATE)
         }
-        require(cards.map { it.id }.distinct().size == cards.size)
-        cards
+        return config.createConnection("jdbc:sqlite:${path.toUri().toASCIIString()}")
     }
-
-    override suspend fun save(cards: List<Card>): List<Card> = withContext(Dispatchers.IO) {
-        Files.createDirectories(images)
-        val added = mutableListOf<Path>()
+    private fun validate(c: Connection) {
+        fun pragma(name: String) = c.createStatement().use { s -> s.executeQuery("PRAGMA $name").use { it.next(); it.getInt(1) } }
+        if (pragma("application_id") != 0x43564C54 || pragma("user_version") != 1)
+            throw CardStorageException("数据库格式或版本不受支持，请检查 cardvault.db")
+    }
+    private fun revision(c: Connection): String = c.createStatement().use { s ->
+        s.executeQuery("SELECT value FROM metadata WHERE key='revision'").use {
+            if (!it.next()) throw CardStorageException("数据库缺少版本信息")
+            it.getString(1)
+        }
+    }
+    override suspend fun load(): List<Card> = withContext(Dispatchers.IO) { mutex.withLock {
+        connect().use { c ->
+            validate(c)
+            c.autoCommit = false
+            val current = revision(c)
+            val cards = c.createStatement().use { s -> s.executeQuery("SELECT * FROM cards ORDER BY position").use { r -> buildList {
+                while (r.next()) add(Card(r.getString("id"), r.getString("name"), r.getString("number"), r.getString("note"),
+                    r.getString("front")?.let { IMAGE_PREFIX + it }, r.getString("back")?.let { IMAGE_PREFIX + it }))
+            } } }
+            c.commit()
+            revision = current
+            synchronized(cache) { cache.clear() }
+            cards
+        }
+    } }
+    override suspend fun initialize() = withContext(Dispatchers.IO) { mutex.withLock {
+        if (Files.exists(database)) throw CardStorageException("数据库已存在，请重试读取；不会覆盖已有卡册")
+        val roots = legacyRoots()
+        if (roots.size > 1) throw CardStorageException("发现多个旧卡册，请只保留需要导入的一套旧卡册后重试")
+        val old = roots.singleOrNull()?.let(::readLegacy) ?: emptyList()
+        Files.createDirectories(database.parent)
+        val temporary = database.resolveSibling(".cardvault-${newId()}.tmp")
+        try {
+            connect(temporary, create = true).use { c ->
+                c.createStatement().use { s ->
+                    s.execute("PRAGMA application_id=1129729108")
+                    s.execute("PRAGMA user_version=1")
+                    s.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                    s.execute("CREATE TABLE images (id TEXT PRIMARY KEY, data BLOB NOT NULL)")
+                    s.execute("CREATE TABLE cards (id TEXT PRIMARY KEY, name TEXT NOT NULL, number TEXT NOT NULL, note TEXT NOT NULL, front TEXT REFERENCES images(id), back TEXT REFERENCES images(id), position INTEGER NOT NULL UNIQUE)")
+                }
+                c.autoCommit = false
+                writeCards(c, old)
+                c.prepareStatement("INSERT INTO metadata VALUES ('revision', ?)").use { it.setString(1, newId()); it.executeUpdate() }
+                c.commit()
+            }
+            // Never replace an existing or concurrently synced database.
+            Files.move(temporary, database)
+            Unit
+        } finally {
+            Files.deleteIfExists(temporary)
+            Files.deleteIfExists(Path.of("$temporary-journal"))
+        }
+    } }
+    override suspend fun save(cards: List<Card>): List<Card> = withContext(Dispatchers.IO) { mutex.withLock {
+        connect().use { c ->
+            validate(c)
+            fun checkRevision() {
+                if (revision == null || revision(c) != revision)
+                    throw CardStorageException("卡册已被其他窗口或同步更新。请重新打开应用后再编辑，当前修改尚未保存")
+            }
+            checkRevision()
+            val backup = backup(c)
+            c.autoCommit = false
+            try {
+                checkRevision()
+                val managed = writeCards(c, cards)
+                val next = newId()
+                c.prepareStatement("UPDATE metadata SET value=? WHERE key='revision'").use { it.setString(1, next); it.executeUpdate() }
+                c.commit()
+                revision = next
+                runCatching { pruneBackups(backup.parent) }
+                managed
+            } catch (e: Exception) { c.rollback(); throw e }
+        }
+    } }
+    private fun writeCards(c: Connection, cards: List<Card>): List<Card> {
+        require(cards.map { it.id }.distinct().size == cards.size) { "卡片 ID 重复" }
         fun importImage(value: String?): String? {
             if (value == null) return null
-            val source = Path.of(value).toAbsolutePath().normalize()
-            if (source.parent == images.toAbsolutePath().normalize()) return source.toString()
-            val destination = images.resolve("${newId()}.${source.fileName.toString().substringAfterLast('.').lowercase()}")
-            Files.copy(source, destination)
-            added.add(destination)
-            return destination.toString()
+            if (value.startsWith(IMAGE_PREFIX)) {
+                val id = value.removePrefix(IMAGE_PREFIX)
+                c.prepareStatement("SELECT 1 FROM images WHERE id=?").use { s ->
+                    s.setString(1, id); s.executeQuery().use { require(it.next()) { "卡片图片不存在，请重新导入" } }
+                }
+                return id
+            }
+            val bytes = fileBytes(Path.of(value))
+            decode(bytes)
+            val id = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            c.prepareStatement("INSERT OR IGNORE INTO images VALUES (?, ?)").use { s ->
+                s.setString(1, id); s.setBytes(2, bytes); s.executeUpdate()
+            }
+            return id
         }
-        val temporary = root.resolve("cards-${newId()}.tmp")
-        try {
-            val managed = cards.map { it.copy(front = importImage(it.front), back = importImage(it.back)) }
-            val props = Properties()
-            props.setProperty("version", "1"); props.setProperty("count", managed.size.toString())
+        val managed = cards.map { card -> card.copy(front = importImage(card.front)?.let { IMAGE_PREFIX + it }, back = importImage(card.back)?.let { IMAGE_PREFIX + it }) }
+        c.createStatement().use { it.executeUpdate("DELETE FROM cards") }
+        c.prepareStatement("INSERT INTO cards VALUES (?, ?, ?, ?, ?, ?, ?)").use { s ->
             managed.forEachIndexed { i, card ->
-                mapOf("id" to card.id, "name" to card.name, "number" to card.number, "note" to card.note,
-                    "front" to (card.front?.let { Path.of(it).fileName.toString() } ?: ""),
-                    "back" to (card.back?.let { Path.of(it).fileName.toString() } ?: "")).forEach { (key, value) -> props.setProperty("$i.$key", value) }
+                s.setString(1, card.id); s.setString(2, card.name); s.setString(3, card.number); s.setString(4, card.note)
+                s.setString(5, card.front?.removePrefix(IMAGE_PREFIX)); s.setString(6, card.back?.removePrefix(IMAGE_PREFIX)); s.setInt(7, i)
+                s.executeUpdate()
             }
-            Files.newOutputStream(temporary).use { props.store(it, "CardVault v1") }
-            try { Files.move(temporary, index, ATOMIC_MOVE, REPLACE_EXISTING) }
-            catch (_: java.nio.file.AtomicMoveNotSupportedException) { Files.move(temporary, index, REPLACE_EXISTING) }
-            // Once committed, cleanup failure must not turn a successful save into a failure.
-            runCatching {
-                val retained = managed.flatMap { listOfNotNull(it.front, it.back) }.map { Path.of(it).fileName.toString() }.toSet()
-                Files.list(images).use { stream -> stream.filter { it.fileName.toString() !in retained }.forEach { Files.deleteIfExists(it) } }
-            }
-            managed
-        } catch (e: Exception) {
-            added.forEach { runCatching { Files.deleteIfExists(it) } }
-            throw e
-        } finally { Files.deleteIfExists(temporary) }
+        }
+        c.createStatement().use { it.executeUpdate("DELETE FROM images WHERE id NOT IN (SELECT front FROM cards WHERE front IS NOT NULL UNION SELECT back FROM cards WHERE back IS NOT NULL)") }
+        return managed
     }
-
+    private fun backup(c: Connection): Path {
+        val folder = database.parent.resolve("backups")
+        Files.createDirectories(folder)
+        val target = folder.resolve("cardvault-${Instant.now().toEpochMilli()}-${newId()}.db")
+        c.prepareStatement("VACUUM INTO ?").use { it.setString(1, target.toString()); it.execute() }
+        return target
+    }
+    private fun pruneBackups(folder: Path) {
+        Files.list(folder).use { files -> files.filter { Files.isRegularFile(it) && it.fileName.toString().matches(Regex("cardvault-[0-9]+-[0-9a-f-]{36}\\.db")) }
+            .sorted(compareByDescending<Path> { Files.getLastModifiedTime(it) }).skip(5).forEach { Files.deleteIfExists(it) } }
+    }
+    private fun readLegacy(root: Path): List<Card> {
+        val props = Properties().also { Files.newInputStream(root.resolve("cards.properties")).use(it::load) }
+        require(props.getProperty("version") == "1") { "旧卡册版本不受支持" }
+        val count = props.getProperty("count").toInt()
+        require(count in 0..100000)
+        return (0 until count).map { n ->
+            fun field(key: String) = requireNotNull(props.getProperty("$n.$key")) { "旧卡册字段缺失" }
+            fun picture(key: String): String? = field(key).takeIf(String::isNotBlank)?.let {
+                val images = root.resolve("images").normalize()
+                val path = images.resolve(it).normalize()
+                require(path.parent == images) { "旧卡册图片路径无效" }
+                path.toString()
+            }
+            Card(field("id"), field("name"), field("number"), field("note"), picture("front"), picture("back"))
+        }
+    }
     override suspend fun pickImage(): String? {
         val selected = withContext(Dispatchers.Swing) {
             val dialog = FileDialog(owner(), "选择卡片照片", FileDialog.LOAD)
@@ -98,15 +200,28 @@ class DesktopCardStore(private val root: Path, private val owner: () -> Frame?) 
         return selected.toString()
     }
 
+    private fun fileBytes(file: Path): ByteArray {
+        require(Files.size(file) <= 30 * 1024 * 1024) { "图片过大，请选择 30 MB 以内的图片" }
+        return Files.readAllBytes(file).also { require(it.size <= 30 * 1024 * 1024) }
+    }
+    private fun decode(bytes: ByteArray): ImageBitmap {
+        val source = Image.makeFromEncoded(bytes)
+        require(source.width.toLong() * source.height <= 40_000_000) { "图片尺寸过大，请缩小后重试" }
+        return source.toComposeImageBitmap()
+    }
     override suspend fun image(path: String): ImageBitmap = withContext(Dispatchers.IO) {
         synchronized(cache) { cache[path] } ?: run {
-            val file = Path.of(path)
-            require(Files.size(file) <= 30 * 1024 * 1024) { "图片过大，请选择 30 MB 以内的图片" }
-            val source = Image.makeFromEncoded(Files.readAllBytes(file))
-            require(source.width.toLong() * source.height <= 40_000_000) { "图片尺寸过大，请缩小后重试" }
-            val bitmap = source.toComposeImageBitmap()
-            synchronized(cache) { cache[path] = bitmap }
-            bitmap
+            val bytes = if (path.startsWith(IMAGE_PREFIX)) mutex.withLock {
+                connect().use { c ->
+                    validate(c)
+                    c.prepareStatement("SELECT data FROM images WHERE id=?").use { s ->
+                        s.setString(1, path.removePrefix(IMAGE_PREFIX))
+                        s.executeQuery().use { r -> check(r.next()) { "图片不存在" }; r.getBytes(1) }
+                    }
+                }
+            } else fileBytes(Path.of(path))
+            decode(bytes).also { bitmap -> synchronized(cache) { cache[path] = bitmap } }
         }
     }
+    private companion object { const val IMAGE_PREFIX = "sqlite-image:" }
 }

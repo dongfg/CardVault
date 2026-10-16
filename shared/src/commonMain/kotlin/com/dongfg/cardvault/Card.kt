@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 data class Card(val id: String, val name: String = "", val number: String = "", val note: String = "", val front: String? = null, val back: String? = null)
 
 interface CardStore {
+    suspend fun initialize()
     suspend fun load(): List<Card>
     suspend fun save(cards: List<Card>): List<Card>
     suspend fun pickImage(): String?
@@ -12,6 +13,9 @@ interface CardStore {
     fun newId(): String
     fun copy(text: String)
 }
+
+class MissingDatabaseException(val location: String, val hasLegacyData: Boolean) : Exception("找不到卡册数据库")
+class CardStorageException(message: String) : Exception(message)
 
 fun maskedNumber(number: String): String {
     val compact = number.filterNot(Char::isWhitespace)

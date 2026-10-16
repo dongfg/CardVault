@@ -16,14 +16,22 @@ import java.awt.Dimension
 import java.nio.file.Path
 
 fun main(args: Array<String>) {
-    val dataRoot = resolveDataRoot(System.getProperty("cardvault.dataDir") ?: System.getenv("CARDVAULT_DATA_DIR"), System.getProperty("jpackage.app-path"), "--demo" in args)
-    if ("--demo" in args) prepareDemo(dataRoot)
+    val demo = "--demo" in args
+    val database = resolveDatabasePath(System.getProperty("cardvault.databasePath") ?: System.getenv("CARDVAULT_DB_PATH"),
+        System.getProperty("jpackage.app-path"), demo,
+        legacyDirectory = System.getProperty("cardvault.dataDir") ?: System.getenv("CARDVAULT_DATA_DIR"))
+    val legacy = buildList {
+        add(database.parent.resolve("data")); add(database.parent)
+        if (!demo && System.getProperty("os.name").startsWith("Mac") && System.getProperty("jpackage.app-path") != null)
+            add(Path.of(System.getProperty("user.home"), "Library", "Application Support", "CardVault", "data"))
+    }
+    if (demo) prepareDemo(database)
     application {
     val state = rememberWindowState(width = 440.dp, height = 860.dp, position = WindowPosition(Alignment.Center))
     val close = remember { CloseController() }
     Window(onCloseRequest = { close.request() }, title = "CardVault", state = state, undecorated = true) {
         window.minimumSize = Dimension(360, 620)
-        val store = remember { DesktopCardStore(dataRoot) { window } }
+        val store = remember { DesktopCardStore(database, legacy) { window } }
         VaultTheme {
             Column(Modifier.fillMaxSize().background(VaultBackground).border(1.dp, VaultBorder)) {
                 Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -43,15 +51,20 @@ fun main(args: Array<String>) {
 }
 }
 
-internal fun resolveDataRoot(
+internal fun resolveDatabasePath(
     override: String?, executable: String?, demo: Boolean,
     osName: String = System.getProperty("os.name"),
-    userHome: String = System.getProperty("user.home"),
+    legacyDirectory: String? = null,
 ): Path = when {
     override != null -> Path.of(override)
-    demo -> Path.of("build/demo-data")
-    executable != null && osName.startsWith("Mac", ignoreCase = true) ->
-        Path.of(userHome, "Library", "Application Support", "CardVault", "data")
-    executable != null -> Path.of(executable).parent.resolve("data")
-    else -> Path.of("data")
+    legacyDirectory != null -> Path.of(legacyDirectory).resolve("cardvault.db")
+    demo -> Path.of("build/demo-data/cardvault.db")
+    executable != null && osName.startsWith("Mac", ignoreCase = true) -> {
+        val app = generateSequence(Path.of(executable).toAbsolutePath()) { it.parent }
+            .firstOrNull { it.fileName?.toString()?.endsWith(".app", true) == true }
+            ?: error("无法定位 macOS 应用目录")
+        app.parent.resolve("cardvault.db")
+    }
+    executable != null -> Path.of(executable).toAbsolutePath().parent.resolve("cardvault.db")
+    else -> Path.of("cardvault.db")
 }.toAbsolutePath().normalize()

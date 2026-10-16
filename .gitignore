@@ -21,6 +21,12 @@ node_modules/
 # Local card collections
 data/
 demo-data/
+cardvault.db
+cardvault.db-journal
+cardvault.db-wal
+cardvault.db-shm
+.cardvault-*.tmp*
+/backups/
 
 # JVM crash reports, heap dumps, and recordings
 hs_err_pid*.log

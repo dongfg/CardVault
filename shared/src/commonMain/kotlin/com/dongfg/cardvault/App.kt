@@ -59,6 +59,8 @@ fun App(store: CardStore, closeController: CloseController, closeWindow: () -> U
     var cards by remember { mutableStateOf<List<Card>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf(false) }
+    var missingDatabase by remember { mutableStateOf<MissingDatabaseException?>(null) }
+    var readMessage by remember { mutableStateOf("") }
     var page by remember { mutableStateOf("home") }
     var selected by remember { mutableStateOf<Card?>(null) }
     var original by remember { mutableStateOf<Card?>(null) }
@@ -73,8 +75,10 @@ fun App(store: CardStore, closeController: CloseController, closeWindow: () -> U
     fun message(text: String) { scope.launch { snackbar.showSnackbar(text) } }
     fun leave(action: () -> Unit) { if (!busy) { if (page == "edit" && dirty) pendingLeave = action else action() } }
     fun load() { scope.launch {
-        loading = true; loadError = false
-        try { cards = store.load() } catch (_: Exception) { loadError = true }
+        loading = true; loadError = false; missingDatabase = null
+        try { cards = store.load() }
+        catch (e: MissingDatabaseException) { missingDatabase = e; loadError = true }
+        catch (e: Exception) { readMessage = (e as? CardStorageException)?.message ?: "请检查数据库是否已同步到本机，以及所在目录是否可写"; loadError = true }
         loading = false
     } }
     fun edit(card: Card?) { val value = card ?: Card(store.newId()); original = value; draft = value; page = "edit" }
@@ -104,7 +108,25 @@ fun App(store: CardStore, closeController: CloseController, closeWindow: () -> U
                                 loading -> Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                     repeat(2) { Box(Modifier.fillMaxWidth().height(290.dp).clip(Shape).background(VaultBorder.copy(alpha = .45f))) }
                                 }
-                                loadError -> EmptyState("暂时无法读取卡片", "请检查数据目录后重试", "重试", ::load)
+                                missingDatabase != null -> {
+                                    val missing = missingDatabase!!
+                                    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Box(Modifier.weight(1f)) {
+                                            EmptyState(if (missing.hasLegacyData) "发现旧版卡册" else "尚未找到卡册",
+                                                "${missing.location}\n\n已有卡册请等待同步完成后重试。" + if (missing.hasLegacyData) "\n导入会保留旧版文件。" else "首次使用可创建新卡册。",
+                                                if (busy) "处理中…" else if (missing.hasLegacyData) "导入旧卡册" else "创建新卡册") {
+                                                if (!busy) scope.launch {
+                                                    busy = true
+                                                    try { store.initialize(); load() }
+                                                    catch (e: Exception) { message(e.message ?: "无法创建卡册，请检查目录权限") }
+                                                    busy = false
+                                                }
+                                            }
+                                        }
+                                        TextButton(enabled = !busy, onClick = ::load, modifier = Modifier.padding(bottom = 24.dp)) { Text("重新读取") }
+                                    }
+                                }
+                                loadError -> EmptyState("暂时无法读取卡片", readMessage, "重试", ::load)
                                 cards.isEmpty() -> EmptyState("把常用卡片收进来", "保存正反面、卡号和备注，随时查找")
                                 filtered.isEmpty() -> EmptyState("没有找到相关卡片", "换个关键词试试", "清空搜索", { query = "" })
                                 else -> LazyColumn(state = listState, contentPadding = PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -134,7 +156,7 @@ fun App(store: CardStore, closeController: CloseController, closeWindow: () -> U
                                     cards = store.save(if (isNew) listOf(value) + cards else cards.map { if (it.id == value.id) value else it })
                                     selected = cards.first { it.id == value.id }; draft = null; page = "detail"
                                     message(if (isNew) "卡片已添加" else "修改已保存")
-                                } catch (_: Exception) { message("保存失败，请重试") }
+                                } catch (e: Exception) { message((e as? CardStorageException)?.message ?: "保存失败，请检查数据库目录权限和可用空间") }
                                 busy = false
                             }
                         }, canSave)
@@ -156,7 +178,7 @@ fun App(store: CardStore, closeController: CloseController, closeWindow: () -> U
             confirmButton = { TextButton(enabled = !busy, onClick = { scope.launch {
                 busy = true
                 try { cards = store.save(cards.filterNot { it.id == draft?.id }); deleteDialog = false; draft = null; selected = null; page = "home"; message("卡片已删除") }
-                catch (_: Exception) { message("删除失败，请重试") }
+                catch (e: Exception) { message((e as? CardStorageException)?.message ?: "删除失败，请重试") }
                 busy = false
             } }) { Text(if (busy) "删除中…" else "删除", color = Danger) } },
             dismissButton = { TextButton(enabled = !busy, onClick = { deleteDialog = false }) { Text("取消") } })
@@ -324,7 +346,7 @@ private fun EmptyState(title: String, subtitle: String, action: String? = null, 
     Column(Modifier.fillMaxSize().padding(28.dp).padding(bottom = 70.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.size(100.dp).background(VaultPale, CircleShape), contentAlignment = Alignment.Center) { VaultMark(true) }
         Spacer(Modifier.height(24.dp)); Text(title, fontSize = 20.sp, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(12.dp)); Text(subtitle, fontSize = 13.sp, color = VaultMuted)
+        Spacer(Modifier.height(12.dp)); Text(subtitle, fontSize = 13.sp, color = VaultMuted, textAlign = TextAlign.Center)
         if (action != null) TextButton(onClick = onAction) { Text(action) }
     }
 }

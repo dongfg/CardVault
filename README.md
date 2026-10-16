@@ -28,9 +28,27 @@
 .\gradlew.bat :desktopApp:run
 ```
 
-默认从空卡册开始。数据保存在项目根目录的 `data/`，包括 `cards.properties` 和 `images/`。图片保存时复制进该目录，移动原始照片不会影响已保存记录。当前采用本地文件存储，未实现 SQLite、加密或云同步。
+开发运行时读取项目根目录的 `cardvault.db`。首次使用点击「创建新卡册」；已有数据库但尚未同步到本机时，请等待同步后点击「重新读取」。
 
-Windows 分发版的数据保存在外层 EXE 同级的 `data/`；macOS 分发版保存在 `~/Library/Application Support/CardVault/data/`。
+## 数据存储
+
+卡片名称、卡号、备注及正反面图片统一存入 SQLite，图片使用 BLOB 保存，不依赖原始照片或其他图片目录。数据库目前未加密。
+
+Windows 分发版读取外层 EXE 同级的 `cardvault.db`；macOS 读取 `.app` 同级的数据库（请先从 DMG 拖出应用），不依赖启动时的工作目录：
+
+```text
+OneDrive/CardVault/
+├── CardVault.exe      # Windows 单文件程序
+├── CardVault.app      # macOS 应用
+├── cardvault.db       # 两个平台共用
+└── backups/           # 保存前快照，保留最近 5 份
+```
+
+同一时刻只在一台设备上使用。切换前关闭应用，等待 OneDrive 上传完成；另一台设备确认数据库已下载、同步完成后再打开。使用 DELETE 日志模式，保存事务完成后关闭连接；不要在写入过程中手动复制数据库。OneDrive 负责文件同步，应用本身不合并同步冲突。
+
+旧版 `data/cards.properties` 和 `data/images/` 会被识别，点击「导入旧卡册」后转换为数据库，原文件保留。也支持数据库同级的旧版文件，以及 macOS 旧位置 `~/Library/Application Support/CardVault/data/`。发现多套旧卡册时会提示整理后重试。
+
+恢复备份时，先关闭应用，保留当前数据库，再将所需 `backups/cardvault-*.db` 复制为应用旁的 `cardvault.db`。可用环境变量 `CARDVAULT_DB_PATH` 指定完整数据库路径；旧变量 `CARDVAULT_DATA_DIR` 对应目录内的 `cardvault.db`。
 
 预览图片列表，可运行独立演示卡册：
 
@@ -38,7 +56,7 @@ Windows 分发版的数据保存在外层 EXE 同级的 `data/`；macOS 分发�
 .\gradlew.bat :desktopApp:run --args="--demo"
 ```
 
-演示数据位于 `build/demo-data/`，包含三张明确标注 SAMPLE / DEMO 的虚构卡片，与正常卡册隔离。演示模式也支持添加、编辑和删除，修改会保留。
+演示数据库位于 `build/demo-data/cardvault.db`，包含三张明确标注 SAMPLE / DEMO 的虚构卡片，与正常卡册隔离。演示模式也支持添加、编辑和删除，修改会保留。路径环境变量优先于默认路径，预览时请勿指向真实卡册。
 
 ## 打包
 
@@ -67,7 +85,7 @@ GitHub Actions 仅手动触发：打开 **Actions → Build desktop packages →
 .\gradlew.bat :desktopApp:test :shared:jvmTest
 ```
 
-测试覆盖搜索、短卡号掩码、记录重读、图片独立保存、失败保存保护和删除清理。
+测试覆盖路径定位、数据库创建、图片 BLOB、单库迁移、事务回滚、过期写入保护、备份、旧版导入、搜索和短卡号掩码。
 
 ## 结构
 

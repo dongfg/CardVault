@@ -15,6 +15,7 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(libs.compose.material3)
     implementation(libs.kotlinx.coroutinesSwing)
+    implementation(libs.sqlite.jdbc)
 
     testImplementation(kotlin("test"))
 }
@@ -30,7 +31,7 @@ compose.desktop {
             description = "A personal card collection"
             vendor = "dongfg"
             licenseFile.set(rootProject.layout.projectDirectory.file("LICENSE"))
-            modules("java.desktop", "java.logging", "java.instrument", "jdk.unsupported")
+            modules("java.desktop", "java.logging", "java.instrument", "java.sql", "jdk.unsupported")
             windows {
                 perUserInstall = true
                 dirChooser = true

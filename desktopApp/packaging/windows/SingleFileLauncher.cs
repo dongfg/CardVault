@@ -43,16 +43,16 @@ internal static class SingleFileLauncher
             if (prepareOnly) return 0;
 
             // Persistent card data never enters a replaceable runtime directory.
-            string dataDirectory = Path.GetFullPath(Environment.GetEnvironmentVariable("CARDVAULT_DATA_DIR") ??
-                Path.Combine(launcherDirectory, args.Contains("--demo") ? "demo-data" : "data"));
-            Directory.CreateDirectory(dataDirectory);
+            string legacyDirectory = Environment.GetEnvironmentVariable("CARDVAULT_DATA_DIR");
+            string database = Path.GetFullPath(Environment.GetEnvironmentVariable("CARDVAULT_DB_PATH") ??
+                Path.Combine(legacyDirectory ?? (args.Contains("--demo") ? Path.Combine(launcherDirectory, "demo-data") : launcherDirectory), "cardvault.db"));
             var start = new ProcessStartInfo(Path.Combine(runtime, "CardVault", "CardVault.exe")) {
                 WorkingDirectory = launcherDirectory,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 Arguments = string.Join(" ", args.Select(QuoteArgument))
             };
-            start.EnvironmentVariables["CARDVAULT_DATA_DIR"] = dataDirectory;
+            start.EnvironmentVariables["CARDVAULT_DB_PATH"] = database;
             var child = Process.Start(start);
             if (child == null) throw new IOException("Could not start CardVault.");
             Log("Started CardVault, PID " + child.Id);
