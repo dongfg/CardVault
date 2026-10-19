@@ -64,7 +64,13 @@
       <Setter Property="CornerRadius" Value="12" />
       <Setter Property="Background" Value="White" />
       <Setter Property="BorderBrush" Value="#DFE6E1" />
+      <Setter Property="MinHeight" Value="48" />
+      <Setter Property="Padding" Value="14,0" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox[AcceptsReturn=True]">
       <Setter Property="Padding" Value="14,12" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
     </Style>
   </Application.Styles>
 </Application>
