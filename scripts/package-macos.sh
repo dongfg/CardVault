@@ -17,7 +17,9 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 app="$stage/CardVault.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp -R "$publish/." "$app/Contents/MacOS/"
+# Third-party native libraries may include symbols independently of .NET's DebugSymbols setting.
+rsync -a --exclude='*.pdb' --exclude='*.dbg' --exclude='*.dwarf' --exclude='*.dSYM' \
+  "$publish/" "$app/Contents/MacOS/"
 cp "$root/src/CardVault/Assets/cardvault.icns" "$app/Contents/Resources/cardvault.icns"
 cp "$root/LICENSE" "$stage/LICENSE.txt"
 sed "s/@VERSION@/$version/g" "$root/packaging/macos/Info.plist" > "$app/Contents/Info.plist"

@@ -21,6 +21,8 @@ git push origin v1.0.1
 
 版本号取自 tag；产物同时上传到 Actions，保留 30 天。macOS 包最低系统版本为 15，仅做 ad-hoc 签名，尚未配置 Developer ID 签名与公证。请先将 `.app` 从 DMG 拖出再使用卡册。
 
+分发包排除 `.pdb`、`.dbg`、`.dwarf` 和 macOS `.dSYM` 调试符号，保留必需的原生库。Native AOT 的精简运行时已编入主程序，不需要另外安装 .NET。
+
 普通 PR 检查由 `check-avalonia.yml` 执行，仅编译与运行存储检查，不打包。新增发布配置尚未在远端运行；本地没有创建或推送 tag。
 
 ## 运行

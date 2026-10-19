@@ -20,4 +20,17 @@ $output = [System.IO.Path]::GetFullPath($OutputFile)
 if (Test-Path -LiteralPath $output) { throw 'Package already exists; refusing to overwrite it' }
 New-Item -ItemType Directory -Path (Split-Path -Parent $output) -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../LICENSE') -Destination (Join-Path $published 'LICENSE.txt')
-Compress-Archive -Path (Join-Path $published '*') -DestinationPath $output
+# Native NuGet dependencies can copy their own PDBs despite DebugSymbols=false.
+# Keep subdirectories and runtime dependencies, but never ship debugging symbols.
+$archive = [System.IO.Compression.ZipFile]::Open($output, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    foreach ($file in Get-ChildItem -LiteralPath $published -Recurse -File) {
+        if ($file.Extension -in @('.pdb', '.dbg', '.dwarf')) { continue }
+        $entryName = [System.IO.Path]::GetRelativePath($published, $file.FullName).Replace('\', '/')
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+            $archive, $file.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal
+        ) | Out-Null
+    }
+} finally {
+    $archive.Dispose()
+}
