@@ -48,11 +48,18 @@ compose.desktop {
             licenseFile.set(rootProject.layout.projectDirectory.file("LICENSE"))
             modules("java.desktop", "java.logging", "java.instrument", "java.sql", "jdk.unsupported")
             windows {
+                iconFile.set(project.file("packaging/icons/cardvault.ico"))
                 perUserInstall = true
                 dirChooser = true
                 shortcut = true
                 menu = true
                 upgradeUuid = "fb338c96-f46d-4fc3-b38d-8c7650f345ae"
+            }
+            macOS {
+                iconFile.set(project.file("packaging/icons/cardvault.icns"))
+            }
+            linux {
+                iconFile.set(project.file("src/main/resources/icons/cardvault.png"))
             }
         }
     }
@@ -98,6 +105,7 @@ if (System.getProperty("os.name").startsWith("Windows")) {
 
     val source = layout.projectDirectory.file("packaging/windows/SingleFileLauncher.cs").asFile
     val manifest = layout.projectDirectory.file("packaging/windows/launcher.manifest").asFile
+    val icon = layout.projectDirectory.file("packaging/icons/cardvault.ico").asFile
     val payload = layout.buildDirectory.file("distributions/CardVault-$appVersion-windows-$architecture.zip").get().asFile
     val hashFile = layout.buildDirectory.file("single-file/payload.sha256").get().asFile
     val singleExe = layout.buildDirectory.file("distributions/CardVault-$appVersion-windows-$architecture-single.exe").get().asFile
@@ -108,7 +116,7 @@ if (System.getProperty("os.name").startsWith("Windows")) {
         group = "distribution"
         description = "Build one self-extracting Windows EXE with a reusable runtime cache"
         dependsOn(portableZip)
-        inputs.files(source, manifest, payload)
+        inputs.files(source, manifest, icon, payload)
         outputs.file(singleExe)
         doFirst {
             hashFile.parentFile.mkdirs()
@@ -128,6 +136,7 @@ if (System.getProperty("os.name").startsWith("Windows")) {
             File(framework, "csc.exe").absolutePath,
             "/nologo", "/target:winexe", "/platform:anycpu", "/optimize+", "/debug-", "/utf8output",
             "/out:${singleExe.absolutePath}", "/win32manifest:${manifest.absolutePath}",
+            "/win32icon:${icon.absolutePath}",
             "/reference:${File(framework, "System.IO.Compression.dll").absolutePath}",
             "/reference:${File(framework, "System.Windows.Forms.dll").absolutePath}",
             "/resource:${payload.absolutePath},CardVault.Payload",

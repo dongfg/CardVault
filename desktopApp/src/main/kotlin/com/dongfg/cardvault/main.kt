@@ -9,11 +9,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.*
 import java.awt.Dimension
 import java.nio.file.Path
+import org.jetbrains.skia.Image
 
 fun main(args: Array<String>) {
     val demo = "--demo" in args
@@ -21,9 +24,13 @@ fun main(args: Array<String>) {
         System.getProperty("jpackage.app-path"), demo)
     if (demo) prepareDemo(database)
     application {
+    val icon = remember {
+        val bytes = requireNotNull(DesktopCardStore::class.java.getResourceAsStream("/icons/cardvault.png")).use { it.readBytes() }
+        BitmapPainter(Image.makeFromEncoded(bytes).toComposeImageBitmap())
+    }
     val state = rememberWindowState(width = 440.dp, height = 860.dp, position = WindowPosition(Alignment.Center))
     val close = remember { CloseController() }
-    Window(onCloseRequest = { close.request() }, title = "CardVault", state = state, undecorated = true) {
+    Window(onCloseRequest = { close.request() }, title = "CardVault", icon = icon, state = state, undecorated = true) {
         window.minimumSize = Dimension(360, 620)
         val store = remember { DesktopCardStore(database) { window } }
         VaultTheme {
