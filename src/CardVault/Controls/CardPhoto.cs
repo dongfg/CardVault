@@ -17,9 +17,15 @@ internal sealed class CardPhoto : Border
     public CardPhoto(CardStore store, string? path, string name, double radius)
     {
         Background = Brush.Parse("#E8F2EE"); CornerRadius = new CornerRadius(radius); ClipToBounds = true;
-        void Label(string text) => Child = new TextBlock { Text = text, FontSize = 16, Foreground = Brush.Parse("#5E716D"),
-            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(20) };
-        Label(path == null ? "▱\n" + name : "正在读取图片…");
+        void Label(string text)
+        {
+            var content = new StackPanel { Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16) };
+            if (path == null) content.Children.Add(new VaultIcon(IconKind.Cards) { Width = 28, Height = 28, HorizontalAlignment = HorizontalAlignment.Center });
+            content.Children.Add(new TextBlock { Text = text, FontSize = 15, Foreground = Brush.Parse("#5E716D"),
+                TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
+            Child = content;
+        }
+        Label(path == null ? name : "正在读取图片…");
         AttachedToVisualTree += async (_, _) =>
         {
             var current = ++generation;
@@ -32,6 +38,6 @@ internal sealed class CardPhoto : Border
             }
             catch { if (current == generation) Label("图片无法读取"); }
         };
-        DetachedFromVisualTree += (_, _) => { generation++; Child = null; bitmap?.Dispose(); bitmap = null; Label(path == null ? "▱\n" + name : "正在读取图片…"); };
+        DetachedFromVisualTree += (_, _) => { generation++; Child = null; bitmap?.Dispose(); bitmap = null; Label(path == null ? name : "正在读取图片…"); };
     }
 }

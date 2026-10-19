@@ -25,7 +25,8 @@ public sealed class MainWindow : Window
     private string page = "home", query = "";
     private bool busy, closing, missing, loaded;
     private readonly Grid body = new(), overlay = new();
-    private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Foreground = Muted, FontSize = 12, Margin = new Thickness(20, 4) };
+    private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.White, FontSize = 13 };
+    private readonly Border toast = new() { Background = Ink, CornerRadius = new CornerRadius(12), Padding = new Thickness(16,12), Margin = new Thickness(20), MaxWidth = 440, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, IsVisible = false, IsHitTestVisible = false };
     private readonly DispatcherTimer toastTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private Button? saveButton;
     private Action? dismissOverlay;
@@ -34,6 +35,7 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = "CardVault · Avalonia"; Width = 440; Height = 860; MinWidth = 360; MinHeight = 620;
+        FontFamily = new FontFamily(OperatingSystem.IsMacOS() ? "PingFang SC, Helvetica Neue" : "Microsoft YaHei UI, Segoe UI");
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ExtendClientAreaToDecorationsHint = true;
         WindowDecorations = WindowDecorations.None;
@@ -41,19 +43,21 @@ public sealed class MainWindow : Window
         using (var stream = Avalonia.Platform.AssetLoader.Open(iconUri)) Icon = new WindowIcon(stream);
         var demo = Program.Arguments.Contains("--demo");
         store = new CardStore(CardStore.ResolvePath(Environment.GetEnvironmentVariable("CARDVAULT_DB_PATH"), demo));
-        var root = new Grid { RowDefinitions = new RowDefinitions("48,*,Auto") };
+        var root = new Grid { RowDefinitions = new RowDefinitions("48,*") };
         var titlebar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,48,48,48"), Background = Brushes.Transparent };
         var drag = new Border { Background = Brushes.Transparent, Child = new TextBlock { Text = "CARDVAULT", FontSize = 10, LetterSpacing = 2, Foreground = Muted, Margin = new Thickness(20, 0), VerticalAlignment = VerticalAlignment.Center } };
         drag.PointerPressed += (_, e) => { if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) { if (e.ClickCount == 2) ToggleMax(); else BeginMoveDrag(e); } };
         titlebar.Children.Add(drag);
-        AddTo(titlebar, Button("−", () => { WindowState = WindowState.Minimized; return Task.CompletedTask; }, "最小化"), 0, 1);
-        AddTo(titlebar, Button("□", () => { ToggleMax(); return Task.CompletedTask; }, "最大化或还原"), 0, 2);
-        AddTo(titlebar, Button("×", () => { Close(); return Task.CompletedTask; }, "关闭"), 0, 3);
-        root.Children.Add(titlebar); AddTo(root, body, 1); AddTo(root, status, 2);
-        var shell = new Grid(); shell.Children.Add(root); shell.Children.Add(overlay);
+        AddTo(titlebar, IconButton(IconKind.Minimize, () => { WindowState = WindowState.Minimized; return Task.CompletedTask; }, "最小化"), 0, 1);
+        AddTo(titlebar, IconButton(IconKind.Maximize, () => { ToggleMax(); return Task.CompletedTask; }, "最大化或还原"), 0, 2);
+        AddTo(titlebar, IconButton(IconKind.Close, () => { Close(); return Task.CompletedTask; }, "关闭"), 0, 3);
+        root.Children.Add(titlebar); AddTo(root, body, 1);
+        toast.Child = status;
+        var shell = new Grid(); shell.Children.Add(root); shell.Children.Add(toast); shell.Children.Add(overlay);
+        WindowResizeHandles.Attach(this, shell);
         overlay.IsVisible = false;
         Content = new Border { BorderBrush = Brush.Parse("#DFE6E1"), BorderThickness = new Thickness(1), Child = shell };
-        toastTimer.Tick += (_, _) => { status.Text = ""; toastTimer.Stop(); };
+        toastTimer.Tick += (_, _) => { toast.IsVisible = false; toastTimer.Stop(); };
         Opened += async (_, _) => await Run(async () =>
         {
             if (demo && Environment.GetEnvironmentVariable("CARDVAULT_DB_PATH") == null) await Task.Run(() => DemoData.Prepare(store));
@@ -80,7 +84,7 @@ public sealed class MainWindow : Window
         };
     }
     private void ToggleMax() => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-    private void Message(string text) { status.Text = text; toastTimer.Stop(); toastTimer.Start(); }
+    private void Message(string text) { status.Text = text; toast.IsVisible = true; toastTimer.Stop(); toastTimer.Start(); }
     private async Task Run(Func<Task> action)
     {
         if (busy) return;
@@ -104,9 +108,24 @@ public sealed class MainWindow : Window
         AutomationProperties.SetName(b, label ?? text);
         b.Click += async (_, _) => await action(); return b;
     }
+    private static Button IconButton(IconKind kind, Func<Task> action, string label)
+    {
+        var button = Button("", action, label, "chrome");
+        button.Content = new VaultIcon(kind, Muted) { Width = 16, Height = 16 };
+        return button;
+    }
     private static void AddTo(Grid grid, Control control, int row = 0, int col = 0)
     { Grid.SetRow(control, row); Grid.SetColumn(control, col); grid.Children.Add(control); }
     private static StackPanel Stack(double spacing = 16) => new() { Spacing = spacing };
+    private static StackPanel EmptyState(string title, string description)
+    {
+        var content = Stack(16); content.Margin = new Thickness(8,64,8,0);
+        content.Children.Add(new Border { Width = 88, Height = 88, CornerRadius = new CornerRadius(44), Background = Pale,
+            HorizontalAlignment = HorizontalAlignment.Center, Child = new VaultIcon(IconKind.Cards) { Width = 40, Height = 40, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } });
+        var heading = Text(title,20); heading.TextAlignment = TextAlignment.Center; heading.FontWeight = FontWeight.SemiBold;
+        var detail = Text(description,13,Muted); detail.TextAlignment = TextAlignment.Center;
+        content.Children.Add(heading); content.Children.Add(detail); return content;
+    }
     private static Border Surface(Control child) => new() { Child = child, Background = Brushes.White, CornerRadius = new CornerRadius(14), BorderBrush = Brush.Parse("#DFE6E1"), BorderThickness = new Thickness(1), Padding = new Thickness(16) };
     private void Reset()
     {
@@ -119,11 +138,19 @@ public sealed class MainWindow : Window
     }
     private Control Bar(string title, string left, Func<Task> back, string right, Func<Task> action)
     {
-        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("80,*,80"), Margin = new Thickness(8, 0) };
-        AddTo(g, Button(left, back));
+        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("80,*,80"), Margin = new Thickness(12, 0) };
+        var backButton = Button(left, back); backButton.Padding = new Thickness(8,10); backButton.HorizontalAlignment = HorizontalAlignment.Left;
+        if (left == "‹ 返回")
+        {
+            var backLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+            backLabel.Children.Add(new VaultIcon(IconKind.Back) { Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center });
+            backLabel.Children.Add(Text("返回", 14, Green)); backButton.Content = backLabel;
+        }
+        AddTo(g, backButton);
         var label = Text(title, 17); label.FontWeight = FontWeight.SemiBold; label.HorizontalAlignment = HorizontalAlignment.Center; label.VerticalAlignment = VerticalAlignment.Center;
         AddTo(g, label, 0, 1);
-        var b = Button(right, action); AddTo(g, b, 0, 2); if (right == "保存") saveButton = b;
+        var b = Button(right, action); b.Padding = new Thickness(8,10); b.HorizontalAlignment = HorizontalAlignment.Right;
+        AddTo(g, b, 0, 2); if (right == "保存") saveButton = b;
         return g;
     }
     private static ScrollViewer Scroll(Control child) => new() { Content = child, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
@@ -134,8 +161,12 @@ public sealed class MainWindow : Window
         var g = new Grid { MaxWidth = 480, RowDefinitions = new RowDefinitions("Auto,*") };
         body.Children.Add(g);
         var header = Stack(16); header.Margin = new Thickness(20, 12, 20, 8);
-        var brand = Text("▱  CardVault", 24); brand.FontWeight = FontWeight.SemiBold; header.Children.Add(brand);
-        var search = new TextBox { PlaceholderText = "⌕  搜索名称、卡号或备注", Text = query, Height = 52 };
+        var brand = Text("CardVault", 24); brand.FontWeight = FontWeight.SemiBold;
+        var brandRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        brandRow.Children.Add(new VaultIcon(IconKind.Cards) { Width = 28, Height = 28, VerticalAlignment = VerticalAlignment.Center });
+        brandRow.Children.Add(brand); header.Children.Add(brandRow);
+        var search = new TextBox { PlaceholderText = "搜索名称、卡号或备注", Text = query, Height = 52,
+            InnerLeftContent = new VaultIcon(IconKind.Search, Muted) { Width = 20, Height = 20, Margin = new Thickness(14,0,0,0), VerticalAlignment = VerticalAlignment.Center } };
         AutomationProperties.SetName(search, "搜索名称、卡号或备注"); header.Children.Add(search); g.Children.Add(header);
         var listArea = new Grid(); AddTo(g, listArea, 1);
         var list = Stack(24); list.Margin = new Thickness(20, 12, 20, 100);
@@ -145,12 +176,15 @@ public sealed class MainWindow : Window
             list.Children.Clear();
             if (!loaded)
             {
-                var empty = Stack(20); empty.Margin = new Thickness(8, 65, 8, 0);
-                empty.Children.Add(Text("▱", 60, Green));
-                empty.Children.Add(Text(missing ? "尚未找到卡册" : "暂时无法读取卡片", 20));
-                empty.Children.Add(Text(missing ? store.Database + "\n\n已有卡册请等待同步完成后重试。首次使用可创建新卡册。" : error ?? "请检查数据库是否已同步到本机，以及所在目录是否可写", 13, Muted));
-                if (missing) empty.Children.Add(Button("创建新卡册", () => Run(async () => { await Task.Run(store.Initialize); await Load(); }), style: "primary"));
-                empty.Children.Add(Button("重新读取", () => Run(Load))); list.Children.Add(empty); return;
+                var empty = EmptyState(missing ? "尚未找到卡册" : "暂时无法读取卡片",
+                    missing ? store.Database + "\n\n已有卡册请等待同步完成后重试。首次使用可创建新卡册。" : error ?? "请检查数据库是否已同步到本机，以及所在目录是否可写");
+                if (missing)
+                {
+                    var create = Button("创建新卡册", () => Run(async () => { await Task.Run(store.Initialize); await Load(); }), style: "primary");
+                    create.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(create);
+                }
+                var retry = Button("重新读取", () => Run(Load)); retry.HorizontalAlignment = HorizontalAlignment.Center;
+                empty.Children.Add(retry); list.Children.Add(empty); return;
             }
             foreach (var card in cards.Where(c => c.Matches(query)))
             {
@@ -163,26 +197,27 @@ public sealed class MainWindow : Window
                 var cover = Photo(card.Front ?? card.Back, card.Name, 24); cover.Margin = new Thickness(0, card.Front != null && card.Back != null ? 10 : 0, 0, 0);
                 tile.Children.Add(cover);
                 var caption = Text(card.Name, 16, Brushes.White); caption.FontWeight = FontWeight.SemiBold;
+                caption.MaxLines = 1; caption.TextWrapping = TextWrapping.NoWrap; caption.TextTrimming = TextTrimming.CharacterEllipsis;
                 var shade = new Border { Child = caption, Padding = new Thickness(18, 28, 18, 14), CornerRadius = new CornerRadius(0, 0, 24, 24), VerticalAlignment = VerticalAlignment.Bottom,
                     Background = new LinearGradientBrush { StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative), GradientStops = [new GradientStop(Colors.Transparent, 0), new GradientStop(Color.Parse("#B3101B19"), 1)] } };
-                tile.Children.Add(shade);
+                if (card.Front != null || card.Back != null) tile.Children.Add(shade);
                 if (card.Front == null && card.Back != null) tile.Children.Add(new Border { Child = Text("反面", 11, Brushes.White), Background = Brush.Parse("#99101B19"), CornerRadius = new CornerRadius(8), Padding = new Thickness(8,4), Margin = new Thickness(14), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top });
                 var button = Button("", () => { selected = card; Detail(); return Task.CompletedTask; }, card.Name, "card");
                 button.Content = tile; list.Children.Add(button);
             }
             if (list.Children.Count == 0)
             {
-                var empty = Stack(); empty.Margin = new Thickness(8, 80, 8, 0); empty.Children.Add(Text("▱", 60, Green));
-                empty.Children.Add(Text(cards.Count == 0 ? "把常用卡片收进来" : "没有找到相关卡片", 20));
-                empty.Children.Add(Text(cards.Count == 0 ? "保存正反面、卡号和备注，随时查找" : "换个关键词试试", 14, Muted)); list.Children.Add(empty);
+                list.Children.Add(EmptyState(cards.Count == 0 ? "把常用卡片收进来" : "没有找到相关卡片",
+                    cards.Count == 0 ? "保存正反面、卡号和备注，随时查找" : "换个关键词试试"));
             }
         }
         search.TextChanged += (_, _) => { query = search.Text ?? ""; Populate(); scroll.Offset = default; };
         Populate();
         if (loaded)
         {
-            var add = Button("＋", () => { Edit(null); return Task.CompletedTask; }, "添加卡片", "primary");
-            add.Width = add.Height = 56; add.FontSize = 28; add.CornerRadius = new CornerRadius(28);
+            var add = Button("", () => { Edit(null); return Task.CompletedTask; }, "添加卡片", "primary");
+            add.Content = new VaultIcon(IconKind.Add, Brushes.White) { Width = 24, Height = 24 };
+            add.Width = add.Height = 56; add.Padding = new Thickness(0); add.BorderThickness = new Thickness(0); add.CornerRadius = new CornerRadius(28);
             add.HorizontalAlignment = HorizontalAlignment.Right; add.VerticalAlignment = VerticalAlignment.Bottom; add.Margin = new Thickness(20);
             listArea.Children.Add(add);
         }
@@ -199,7 +234,8 @@ public sealed class MainWindow : Window
         g.Children.Add(Bar("", "‹ 返回", () => { Home(); return Task.CompletedTask; }, "编辑", () => { Edit(card); return Task.CompletedTask; }));
         var s = Stack(16); s.Margin = new Thickness(20, 0, 20, 32); AddTo(g, Scroll(s), 1);
         var name = Text(card.Name, 26); name.FontWeight = FontWeight.SemiBold; s.Children.Add(name);
-        var sides = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), Background = Pale };
+        var sides = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 4 };
+        var tabs = new Border { Background = Pale, CornerRadius = new CornerRadius(12), Padding = new Thickness(4), ClipToBounds = true, Child = sides };
         var image = new ContentControl(); var hint = Text("", 12, Muted); hint.HorizontalAlignment = HorizontalAlignment.Center;
         void Show(bool front)
         {
@@ -207,15 +243,16 @@ public sealed class MainWindow : Window
             var picture = Photo(path, card.Name);
             if (path != null) picture.PointerPressed += (_, e) => { if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) Preview(path); };
             image.Content = picture; hint.Text = path == null ? "编辑以添加" + (front ? "正面" : "反面") : "点击图片查看大图";
-            foreach (var c in sides.Children.OfType<Button>()) c.Background = Brushes.Transparent;
-            ((Button)sides.Children[front ? 0 : 1]).Background = Brushes.White;
+            foreach (var c in sides.Children.OfType<Button>()) c.Classes.Remove("selected");
+            ((Button)sides.Children[front ? 0 : 1]).Classes.Add("selected");
         }
         var frontButton = Button("正面" + (card.Front == null ? " · 未添加" : ""), () => { Show(true); return Task.CompletedTask; });
         var backButton = Button("反面" + (card.Back == null ? " · 未添加" : ""), () => { Show(false); return Task.CompletedTask; });
         frontButton.HorizontalAlignment = backButton.HorizontalAlignment = HorizontalAlignment.Stretch;
-        frontButton.Height = backButton.Height = 44;
+        frontButton.Height = backButton.Height = 40;
+        frontButton.Classes.Add("segment"); backButton.Classes.Add("segment");
         AddTo(sides, frontButton); AddTo(sides, backButton, 0, 1);
-        s.Children.Add(sides); s.Children.Add(image); s.Children.Add(hint); Show(card.Front != null || card.Back == null);
+        s.Children.Add(tabs); s.Children.Add(image); s.Children.Add(hint); Show(card.Front != null || card.Back == null);
         s.Children.Add(Text("卡号", 14, Muted));
         var number = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
         var numberText = Text(string.IsNullOrWhiteSpace(card.Number) ? "未填写卡号" : card.MaskedNumber, 16); numberText.VerticalAlignment = VerticalAlignment.Center; number.Children.Add(numberText);
@@ -227,7 +264,8 @@ public sealed class MainWindow : Window
             AddTo(number, reveal, 0, 1);
             AddTo(number, Button("复制", () => Run(async () => { var clipboard = Clipboard ?? throw new IOException("剪贴板不可用"); await clipboard.SetTextAsync(card.Number); Message("卡号已复制"); })), 0, 2);
         }
-        s.Children.Add(Surface(number)); s.Children.Add(Text("备注", 14, Muted)); s.Children.Add(Surface(Text(string.IsNullOrWhiteSpace(card.Note) ? "暂无备注" : card.Note, 15)));
+        var numberSurface = Surface(number); numberSurface.Padding = new Thickness(12,6); numberSurface.MinHeight = 56;
+        s.Children.Add(numberSurface); s.Children.Add(Text("备注", 14, Muted)); s.Children.Add(Surface(Text(string.IsNullOrWhiteSpace(card.Note) ? "暂无备注" : card.Note, 15)));
     }
     private void Edit(Card? card)
     {
@@ -238,16 +276,23 @@ public sealed class MainWindow : Window
         if (draft is not { } card) return;
         Reset(); page = "edit"; var g = PageGrid(); bool existing = cards.Any(x => x.Id == card.Id);
         g.Children.Add(Bar(existing ? "编辑卡片" : "添加卡片", "取消", () => Leave(() => { if (selected == null) Home(); else Detail(); }), "保存", Save));
-        var s = Stack(20); s.Margin = new Thickness(20, 0, 20, 32); AddTo(g, Scroll(s), 1);
+        var s = Stack(16); s.Margin = new Thickness(20, 0, 20, 20); AddTo(g, Scroll(s), 1);
         var images = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 12 };
         for (var i = 0; i < 2; i++)
         {
             bool front = i == 0; var path = front ? card.Front : card.Back; var side = front ? "正面" : "反面";
             var group = Stack(8); group.Children.Add(Text(side, 14, Muted));
             var photo = Button("", () => path == null ? Pick(front) : ShowPreview(path), side + "照片", "card");
-            photo.Content = Photo(path, "＋ 添加照片"); group.Children.Add(photo);
-            group.Children.Add(Button(path == null ? "添加照片" : "替换照片", () => Pick(front)));
-            if (path != null) group.Children.Add(Button("移除", () => { draft = front ? draft! with { Front = null } : draft! with { Back = null }; RenderEdit(); return Task.CompletedTask; }));
+            photo.Content = Photo(path, "添加照片"); group.Children.Add(photo);
+            var actions = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            var pick = Button(path == null ? "添加照片" : "替换照片", () => Pick(front));
+            pick.Padding = new Thickness(0,6); pick.MinHeight = 32; pick.HorizontalAlignment = HorizontalAlignment.Left; AddTo(actions, pick);
+            if (path != null)
+            {
+                var remove = Button("移除", () => { draft = front ? draft! with { Front = null } : draft! with { Back = null }; RenderEdit(); return Task.CompletedTask; });
+                remove.Padding = new Thickness(0,6); remove.MinHeight = 32; AddTo(actions, remove, 0, 1);
+            }
+            group.Children.Add(actions);
             AddTo(images, group, 0, i);
         }
         s.Children.Add(images);
@@ -264,17 +309,22 @@ public sealed class MainWindow : Window
         Field("卡号", card.Number, "输入卡号", v => draft = draft! with { Number = v });
         Field("备注", card.Note, "记录用途或其他补充信息", v => draft = draft! with { Note = v }, true);
         s.Children.Add(validation); ValidateDraft(validation);
-        if (existing) s.Children.Add(Button("删除卡片", async () =>
+        if (existing)
         {
-            if (await Confirm("删除「" + draft!.Name + "」？", "这张卡片的正反面图片、卡号和备注将一并删除，无法撤销。", "删除"))
-                await Run(async () => { cards = await Task.Run(() => store.Save(cards.Where(x => x.Id != card.Id).ToList())); Home(); Message("卡片已删除"); });
-        }, style: "danger"));
+            var delete = Button("删除卡片", async () =>
+            {
+                if (await Confirm("删除「" + draft!.Name + "」？", "这张卡片的正反面图片、卡号和备注将一并删除，无法撤销。", "删除"))
+                    await Run(async () => { cards = await Task.Run(() => store.Save(cards.Where(x => x.Id != card.Id).ToList())); Home(); Message("卡片已删除"); });
+            }, style: "danger");
+            delete.HorizontalAlignment = HorizontalAlignment.Center; s.Children.Add(delete);
+        }
     }
     private bool Valid => draft != null && !string.IsNullOrWhiteSpace(draft.Name) && draft.Name.Length <= 40 && draft.Number.Length <= 80 && draft.Note.Length <= 2000;
     private void UpdateSave() { if (saveButton != null) saveButton.IsEnabled = Valid && Dirty && !busy; }
     private void ValidateDraft(TextBlock validation)
     {
         validation.Text = draft!.Name.Length > 40 ? "名称最多 40 字" : draft.Number.Length > 80 ? "卡号最多 80 字符" : draft.Note.Length > 2000 ? "备注最多 2000 字符" : string.IsNullOrWhiteSpace(draft.Name) ? "请填写卡片名称" : "";
+        validation.IsVisible = !string.IsNullOrEmpty(validation.Text);
         UpdateSave();
     }
     private Task Save() => Run(async () =>
