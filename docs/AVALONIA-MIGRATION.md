@@ -43,7 +43,9 @@ CARDVAULT_DB_PATH="$PWD/cardvault.db" dotnet run --project src/CardVault
 - 标准 `dotnet build` / `dotnet run` 是开发编译与预览，不执行 AOT 发布或分发打包。
 - 本轮仅完成 Windows 的实际运行和编译检查。尚未执行 Native AOT 链接，也未在 macOS 实机验证；AOT 发布需后续在对应系统安装原生工具链后验证。不能把无分析警告等同于已验证 AOT 产物。
 
-后续授权打包时再处理 Windows 原生工具链、macOS 应用包/签名、公证及 CI 发布流程。当前 `.github/workflows/check-avalonia.yml` 仅在 Windows/macOS 上编译与运行存储检查，不打包、不发布。原有图标已迁移到 `src/CardVault/Assets`，源图与导出工具位于 `design/icons`，本轮未重新生成图标。
+`.github/workflows/build-desktop.yml` 已配置为推送 `v主版本.次版本.补丁号` tag 时，在 Windows x64、macOS Intel 和 Apple Silicon runner 上执行检查、Native AOT 发布及打包，全部成功后创建 Release。Windows 为便携 ZIP，macOS 为含 `.app` 的 DMG；版本取自 tag，产物保留 30 天。macOS 最低系统版本为 15，目前仅做 ad-hoc 签名，Developer ID 签名与公证待配置。发布配置尚未在远端执行，本地未打包或推送 tag。
+
+`.github/workflows/check-avalonia.yml` 仍仅编译与运行存储检查。原有图标已迁移到 `src/CardVault/Assets`，源图与导出工具位于 `design/icons`，没有重新生成图标。
 
 ## 工程结构
 

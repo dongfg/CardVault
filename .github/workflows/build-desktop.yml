@@ -1,0 +1,121 @@
+name: Build desktop packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-packages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Validate release tag
+        id: version
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Tag must have the form vMAJOR.MINOR.PATCH, for example v1.0.1' >&2
+            exit 1
+          fi
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Native AOT / ${{ matrix.target }}
+    needs: metadata
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-x64
+            runner: windows-2022
+            rid: win-x64
+            filename: CardVault-windows-x64.zip
+          - target: macos-x64
+            runner: macos-15-intel
+            rid: osx-x64
+            filename: CardVault-macos-x64.dmg
+          - target: macos-arm64
+            runner: macos-15
+            rid: osx-arm64
+            filename: CardVault-macos-arm64.dmg
+    env:
+      RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+      TARGET_RID: ${{ matrix.rid }}
+      DOWNLOAD_FILENAME: ${{ matrix.filename }}
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build and check source
+        run: dotnet build CardVault.slnx -c Release
+      - name: Check SQLite compatibility
+        run: dotnet run --project tests/CardVault.Checks -c Release --no-build
+      - name: Publish Native AOT
+        shell: bash
+        run: |
+          dotnet publish src/CardVault/CardVault.csproj -c Release -r "$TARGET_RID" \
+            --self-contained true -o build/publish \
+            -p:PublishAot=true -p:Version="$RELEASE_VERSION" \
+            -p:DebugType=None -p:DebugSymbols=false -p:StripSymbols=true \
+            -p:IlcTreatWarningsAsErrors=true
+      - name: Package Windows portable ZIP
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/package-windows.ps1 -PublishDirectory build/publish -OutputFile "build/release-assets/$env:DOWNLOAD_FILENAME"
+      - name: Package macOS application and DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash scripts/package-macos.sh build/publish "$RELEASE_VERSION" "build/release-assets/$DOWNLOAD_FILENAME"
+      - name: Upload package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: CardVault-${{ needs.metadata.outputs.version }}-${{ matrix.target }}
+          path: build/release-assets/${{ matrix.filename }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  release:
+    name: Publish release
+    needs: [metadata, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: CardVault-${{ needs.metadata.outputs.version }}-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish all packages
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+        run: |
+          test -s release-assets/CardVault-windows-x64.zip
+          test -s release-assets/CardVault-macos-x64.dmg
+          test -s release-assets/CardVault-macos-arm64.dmg
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "CardVault $RELEASE_TAG" --generate-notes --latest

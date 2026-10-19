@@ -4,6 +4,25 @@
 
 当前重写在 `codex/avalonia-rewrite` 分支，待界面确认后合并。本轮仅进行源码开发、编译和运行预览，没有生成分发包。
 
+## Tag 发布
+
+推送 `v主版本.次版本.补丁号` tag 会触发 `.github/workflows/build-desktop.yml`，在对应系统上执行检查、Native AOT 发布和打包。三个平台全部成功后自动创建 GitHub Release，不覆盖已有 Release。
+
+| 平台 | Release 文件 |
+| --- | --- |
+| Windows x64 | `CardVault-windows-x64.zip`（解压后运行 `CardVault.exe`，保留同目录原生库） |
+| macOS Intel | `CardVault-macos-x64.dmg` |
+| macOS Apple Silicon | `CardVault-macos-arm64.dmg` |
+
+```sh
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+版本号取自 tag；产物同时上传到 Actions，保留 30 天。macOS 包最低系统版本为 15，仅做 ad-hoc 签名，尚未配置 Developer ID 签名与公证。请先将 `.app` 从 DMG 拖出再使用卡册。
+
+普通 PR 检查由 `check-avalonia.yml` 执行，仅编译与运行存储检查，不打包。新增发布配置尚未在远端运行；本地没有创建或推送 tag。
+
 ## 运行
 
 安装 .NET 10 SDK，在项目根目录执行：
@@ -75,7 +94,9 @@ CardVault/
 │   └── Assets/                # 应用图标
 ├── tests/CardVault.Checks/    # 存储兼容性与数据保护检查
 ├── design/                   # UI 设计与图标源文件
-└── docs/                     # 技术说明
+├── docs/                     # 技术说明
+├── scripts/                  # CI 打包脚本
+└── packaging/                # 平台打包元数据
 ```
 
 [UI 设计依据](design/UI-DESIGN.md)延续原有视觉设计。构建输出、演示卡册和本地缓存均不纳入 Git。
