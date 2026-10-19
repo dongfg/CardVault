@@ -1,6 +1,6 @@
 # Avalonia 迁移
 
-分支：`codex/avalonia-rewrite`。新入口为 `src/CardVault`，旧 Kotlin 源码、截图及发布流程暂保留供核对。确认效果后再合并；本轮不发布、不生成安装包。
+分支：`codex/avalonia-rewrite`。应用入口为 `src/CardVault`，工程已完整替换为 Avalonia；旧 Kotlin 模块、Gradle 工程、旧截图及发布流程已移除，可通过 Git 历史查看。确认效果后再合并；本轮不发布、不生成安装包。
 
 ## 开发
 
@@ -43,4 +43,8 @@ CARDVAULT_DB_PATH="$PWD/cardvault.db" dotnet run --project src/CardVault
 - 标准 `dotnet build` / `dotnet run` 是开发编译与预览，不执行 AOT 发布或分发打包。
 - 本轮仅完成 Windows 的实际运行和编译检查。尚未执行 Native AOT 链接，也未在 macOS 实机验证；AOT 发布需后续在对应系统安装原生工具链后验证。不能把无分析警告等同于已验证 AOT 产物。
 
-后续授权打包时再处理 Windows 原生工具链、macOS 应用包/图标/签名、公证及新的 CI 发布流程。现有 `.github/workflows/build-desktop.yml` 仍面向 Kotlin 版，不能用于发布 Avalonia 版。
+后续授权打包时再处理 Windows 原生工具链、macOS 应用包/签名、公证及 CI 发布流程。当前 `.github/workflows/check-avalonia.yml` 仅在 Windows/macOS 上编译与运行存储检查，不打包、不发布。原有图标已迁移到 `src/CardVault/Assets`，源图与导出工具位于 `design/icons`，本轮未重新生成图标。
+
+## 工程结构
+
+应用的 `Views`、`Controls`、`Models`、`Storage`、`Imaging`、`Demo` 分别存放窗口、控件、模型、数据库、图片处理和演示代码，使用对应的 C# 命名空间。`App.axaml.cs` 管理应用生命周期，`Program.cs` 仅保留启动入口。测试项目位于 `tests`，UI 设计资料位于 `design`，技术说明位于 `docs`。

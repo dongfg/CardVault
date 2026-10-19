@@ -55,14 +55,30 @@ macOS：`CARDVAULT_DB_PATH="$PWD/cardvault.db" dotnet run --project src/CardVaul
 
 当前已在 Windows 实际运行验证；macOS 窗口、文件选择、剪贴板及 Native AOT 链接仍需在对应系统验证。本轮未执行 `dotnet publish` 或任何分发打包任务。
 
-完整说明见 [Avalonia 迁移记录](docs/AVALONIA-MIGRATION.md)。原 Kotlin 源码暂保留作核对，旧发布流程仍面向 JVM 版，不能用于发布 Avalonia 版；历史文档见 [JVM 版说明](docs/LEGACY-JVM.md)。
+完整说明见 [Avalonia 迁移记录](docs/AVALONIA-MIGRATION.md)。项目已完整切换到 Avalonia；旧实现可通过 Git 历史查看。
 
 ## 结构
 
-- `src/CardVault`：Avalonia 桌面应用、SQLite 存储、图片交互和独立演示。
-- `tests/CardVault.Checks`：临时目录内的存储兼容性和数据保护检查。
-- `UI-DESIGN.md`：沿用的界面设计依据。
-- `shared`、`desktopApp`：迁移前 Kotlin 实现。
+```text
+CardVault/
+├── CardVault.slnx
+├── global.json
+├── src/CardVault/
+│   ├── App.axaml / App.axaml.cs
+│   ├── Program.cs
+│   ├── Views/                 # 窗口与页面
+│   ├── Controls/              # 卡面控件
+│   ├── Models/                # 卡片模型
+│   ├── Storage/               # SQLite 存储
+│   ├── Imaging/               # 图片校验与解码
+│   ├── Demo/                  # 独立演示数据
+│   └── Assets/                # 应用图标
+├── tests/CardVault.Checks/    # 存储兼容性与数据保护检查
+├── design/                   # UI 设计与图标源文件
+└── docs/                     # 技术说明
+```
+
+[UI 设计依据](design/UI-DESIGN.md)延续原有视觉设计。构建输出、演示卡册和本地缓存均不纳入 Git。
 
 ## 开源协议
 

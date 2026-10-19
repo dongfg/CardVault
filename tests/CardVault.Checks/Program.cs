@@ -1,6 +1,8 @@
 using Microsoft.Data.Sqlite;
+using CardVault.Models;
+using CardVault.Storage;
 
-namespace CardVault;
+namespace CardVault.Checks;
 
 internal static class StorageChecks
 {
