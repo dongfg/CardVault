@@ -75,6 +75,7 @@ jobs:
             -p:IlcTreatWarningsAsErrors=true
       - name: Sign payload and package signed Windows single EXE
         if: runner.os == 'Windows'
+        timeout-minutes: 20
         shell: pwsh
         run: >-
           ./scripts/package-windows.ps1
