@@ -1,22 +1,15 @@
-*.iml
-.kotlin
-.gradle
+# .NET / Avalonia build outputs
+**/bin/
+**/obj/
 **/build/
-xcuserdata
-!src/**/build/
-local.properties
-.idea
+TestResults/
+
+# Local IDE settings
+.vs/
+.idea/
+*.user
+*.suo
 .DS_Store
-captures
-.externalNativeBuild
-.cxx
-*.xcodeproj/*
-!*.xcodeproj/project.pbxproj
-!*.xcodeproj/xcshareddata/
-!*.xcodeproj/project.xcworkspace/
-!*.xcworkspace/contents.xcworkspacedata
-**/xcshareddata/WorkspaceSettings.xcsettings
-node_modules/
 
 # Local card collections
 demo-data/
@@ -27,8 +20,11 @@ cardvault.db-shm
 .cardvault-*.tmp*
 /backups/
 
-# JVM crash reports, heap dumps, and recordings
-hs_err_pid*.log
-replay_pid*.log
-*.hprof
-*.jfr
+# Icon tool Python cache
+__pycache__/
+
+# Personal signing material (never commit private keys)
+/signing-material/
+*.key.pem
+*.pfx
+*.p12

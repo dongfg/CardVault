@@ -20,7 +20,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - name: Read version from tag
+      - name: Validate release tag
         id: version
         shell: bash
         run: |
@@ -32,77 +32,67 @@ jobs:
           echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build ${{ matrix.target }}
+    name: Native AOT / ${{ matrix.target }}
     needs: metadata
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
-    env:
-      CARDVAULT_BUILD_VERSION: ${{ needs.metadata.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: windows-x64
             runner: windows-2022
-            java_arch: x64
-            source: desktopApp/build/distributions/*-windows-x64-single.exe
+            rid: win-x64
             filename: CardVault-windows-x64.exe
-          - target: macos-x64
-            runner: macos-15-intel
-            java_arch: x64
-            source: desktopApp/build/compose/binaries/main-release/dmg/*.dmg
-            filename: CardVault-macos-x64.dmg
           - target: macos-arm64
             runner: macos-15
-            java_arch: aarch64
-            source: desktopApp/build/compose/binaries/main-release/dmg/*.dmg
+            rid: osx-arm64
             filename: CardVault-macos-arm64.dmg
+    env:
+      RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+      TARGET_RID: ${{ matrix.rid }}
+      DOWNLOAD_FILENAME: ${{ matrix.filename }}
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
-          distribution: zulu
-          java-version: '21'
-          architecture: ${{ matrix.java_arch }}
-          cache: gradle
-      - name: Test and build Windows single EXE
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: .\gradlew.bat :desktopApp:test :desktopApp:testRelease :desktopApp:packageSingleExe "-PcardvaultVersion=$env:CARDVAULT_BUILD_VERSION" --console=plain --stacktrace
-      - name: Verify Windows self-extraction
-        if: runner.os == 'Windows'
-        shell: pwsh
+          dotnet-version: '10.0.x'
+      - name: Build and check source
+        run: dotnet build CardVault.slnx -c Release
+      - name: Check SQLite compatibility
+        run: dotnet run --project tests/CardVault.Checks -c Release --no-build
+      - name: Publish Native AOT
+        shell: bash
         run: |
-          $exe = @(Get-ChildItem -Path 'desktopApp/build/distributions/*-windows-x64-single.exe')
-          if ($exe.Count -ne 1) { throw 'Expected exactly one single EXE' }
-          & ./desktopApp/packaging/windows/Test-SingleFile.ps1 -Executable $exe[0].FullName
-      - name: Test and build macOS DMG
+          dotnet publish src/CardVault/CardVault.csproj -c Release -r "$TARGET_RID" \
+            --self-contained true -o build/publish \
+            -p:PublishAot=true -p:Version="$RELEASE_VERSION" \
+            -p:DebugType=None -p:DebugSymbols=false -p:StripSymbols=true \
+            -p:IlcTreatWarningsAsErrors=true
+      - name: Sign payload and package signed Windows single EXE
+        if: runner.os == 'Windows'
+        timeout-minutes: 20
+        shell: pwsh
+        run: >-
+          ./scripts/package-windows.ps1
+          -PublishDirectory build/publish
+          -OutputFile "build/release-assets/$env:DOWNLOAD_FILENAME"
+          -Version $env:RELEASE_VERSION
+          -SigningCertificateUrl 'https://cdn.dongfg.com/certs/codesign.pfx'
+          -RootCertificateUrl 'https://cdn.dongfg.com/certs/root-ca.cer'
+      - name: Package macOS application and DMG
         if: runner.os == 'macOS'
         shell: bash
-        run: bash ./gradlew :desktopApp:test :desktopApp:testRelease :desktopApp:packageReleaseDmg "-PcardvaultVersion=$CARDVAULT_BUILD_VERSION" --console=plain --stacktrace
-      - name: Prepare download filename
-        shell: bash
-        env:
-          SOURCE_PATTERN: ${{ matrix.source }}
-          DOWNLOAD_FILENAME: ${{ matrix.filename }}
-        run: |
-          shopt -s nullglob
-          # The pattern comes from the fixed matrix above; expand it to locate the built package.
-          # shellcheck disable=SC2206
-          files=( $SOURCE_PATTERN )
-          if [[ ${#files[@]} -ne 1 ]]; then
-            echo "Expected one package for $SOURCE_PATTERN, found ${#files[@]}" >&2
-            exit 1
-          fi
-          mkdir -p release-assets
-          cp "${files[0]}" "release-assets/$DOWNLOAD_FILENAME"
+        run: bash scripts/package-macos.sh build/publish "$RELEASE_VERSION" "build/release-assets/$DOWNLOAD_FILENAME"
       - name: Upload package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: CardVault-${{ needs.metadata.outputs.version }}-${{ matrix.target }}
-          path: release-assets/${{ matrix.filename }}
+          path: build/release-assets/${{ matrix.filename }}
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -120,17 +110,14 @@ jobs:
           pattern: CardVault-${{ needs.metadata.outputs.version }}-*
           path: release-assets
           merge-multiple: true
-      - name: Publish the packages
+      - name: Publish all packages
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
         run: |
-          test -f release-assets/CardVault-windows-x64.exe
-          test -f release-assets/CardVault-macos-x64.dmg
-          test -f release-assets/CardVault-macos-arm64.dmg
+          test -s release-assets/CardVault-windows-x64.exe
+          test -s release-assets/CardVault-macos-arm64.dmg
           gh release create "$RELEASE_TAG" release-assets/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "CardVault $RELEASE_TAG" \
-            --generate-notes --latest
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "CardVault $RELEASE_TAG" --generate-notes --latest
