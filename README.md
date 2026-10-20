@@ -26,6 +26,8 @@ Windows 单文件 EXE 使用原生 C++ 启动器，内嵌 LZX 压缩的 AOT 主�
 
 普通 PR 检查由 `check-avalonia.yml` 执行，仅编译与运行存储检查，不打包。本次单文件发布配置尚未在远端运行；本地没有创建或推送 tag。
 
+Windows 个人 CA、根证书与无密码签名 PFX 的生成脚本及参数见 [Windows 签名说明](docs/WINDOWS-SIGNING.md)。证书下载地址确定后再接入 CI。
+
 ## 运行
 
 安装 .NET 10 SDK，在项目根目录执行：

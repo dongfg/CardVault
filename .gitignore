@@ -22,3 +22,9 @@ cardvault.db-shm
 
 # Icon tool Python cache
 __pycache__/
+
+# Personal signing material (never commit private keys)
+/signing-material/
+*.key.pem
+*.pfx
+*.p12
