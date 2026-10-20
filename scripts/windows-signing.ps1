@@ -33,6 +33,7 @@ function New-WindowsSigningContext {
         Directory = Join-Path ([System.IO.Path]::GetTempPath()) ('cardvault-signing-' + [Guid]::NewGuid().ToString('N'))
         PfxPath = ''; RootPath = ''; RootCertificate = $null; RootImported = $false
         SignerThumbprint = ''; SignTool = $signTool; TimestampUrl = $TimestampUrl.AbsoluteUri
+        CertUtil = Join-Path $env:SystemRoot 'System32/certutil.exe'
     }
     $signer = $null
     $chain = $null
@@ -61,15 +62,31 @@ function New-WindowsSigningContext {
         if (-not $chain.Build($signer)) { throw 'Signing certificate chain, validity or code-signing purpose is invalid' }
         $context.SignerThumbprint = $signer.Thumbprint
         if ($TrustRoot) {
-            Write-BuildLog 'Add temporary root trust on CI runner'
-            # Trust is added only on the disposable CI runner and removed on completion.
-            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'CurrentUser')
+            Write-BuildLog 'Check temporary LocalMachine root trust on CI runner'
+            # CurrentUser Root.Add can display an invisible confirmation dialog on a headless runner.
+            # Use the elevated disposable runner's machine store, with a bounded CLI process.
+            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'LocalMachine')
             try {
-                $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+                $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
                 $existing = $store.Certificates.Find([System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
                     $context.RootCertificate.Thumbprint, $false)
-                if ($existing.Count -eq 0) { $store.Add($context.RootCertificate); $context.RootImported = $true }
             } finally { $store.Dispose() }
+            if ($existing.Count -eq 0) {
+                $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+                try {
+                    $principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
+                    if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
+                        throw 'Temporary LocalMachine root trust requires an elevated CI runner'
+                    }
+                } finally { $identity.Dispose() }
+                # Mark before invoking the command so a partial import is cleaned up on failure too.
+                $context.RootImported = $true
+                Invoke-BuildProcess -FilePath $context.CertUtil -Label 'Import temporary CI root (LocalMachine)' -TimeoutSeconds 30 -ArgumentList @(
+                    '-f', '-addstore', 'Root', $context.RootPath)
+            } else {
+                Write-BuildLog 'Root already trusted in LocalMachine; existing trust will be retained'
+            }
+            Write-BuildLog 'Temporary CI root trust ready'
         }
         Write-BuildLog "Certificate validation passed; signing identity: $($signer.Subject)"
         return $context
@@ -123,11 +140,8 @@ function Close-WindowsSigningContext {
     Write-BuildLog 'Clean up signing certificate files and temporary CI root trust'
     try {
         if ($Context.RootImported) {
-            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root', 'CurrentUser')
-            try {
-                $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-                $store.Remove($Context.RootCertificate)
-            } finally { $store.Dispose() }
+            Invoke-BuildProcess -FilePath $Context.CertUtil -Label 'Remove temporary CI root (LocalMachine)' -TimeoutSeconds 30 -ArgumentList @(
+                '-delstore', 'Root', $Context.RootCertificate.Thumbprint)
         }
     } finally {
         if ($Context.RootCertificate) { $Context.RootCertificate.Dispose() }
