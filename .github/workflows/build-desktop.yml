@@ -43,11 +43,7 @@ jobs:
           - target: windows-x64
             runner: windows-2022
             rid: win-x64
-            filename: CardVault-windows-x64.zip
-          - target: macos-x64
-            runner: macos-15-intel
-            rid: osx-x64
-            filename: CardVault-macos-x64.dmg
+            filename: CardVault-windows-x64.exe
           - target: macos-arm64
             runner: macos-15
             rid: osx-arm64
@@ -77,10 +73,10 @@ jobs:
             -p:PublishAot=true -p:Version="$RELEASE_VERSION" \
             -p:DebugType=None -p:DebugSymbols=false -p:StripSymbols=true \
             -p:IlcTreatWarningsAsErrors=true
-      - name: Package Windows portable ZIP
+      - name: Package Windows single EXE
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/package-windows.ps1 -PublishDirectory build/publish -OutputFile "build/release-assets/$env:DOWNLOAD_FILENAME"
+        run: ./scripts/package-windows.ps1 -PublishDirectory build/publish -OutputFile "build/release-assets/$env:DOWNLOAD_FILENAME" -Version $env:RELEASE_VERSION
       - name: Package macOS application and DMG
         if: runner.os == 'macOS'
         shell: bash
@@ -113,8 +109,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
         run: |
-          test -s release-assets/CardVault-windows-x64.zip
-          test -s release-assets/CardVault-macos-x64.dmg
+          test -s release-assets/CardVault-windows-x64.exe
           test -s release-assets/CardVault-macos-arm64.dmg
           gh release create "$RELEASE_TAG" release-assets/* \
             --repo "$GITHUB_REPOSITORY" --verify-tag \

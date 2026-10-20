@@ -16,7 +16,8 @@ public sealed class CardStore(string database)
     {
         if (!string.IsNullOrWhiteSpace(pathOverride)) return Path.GetFullPath(pathOverride);
         if (demo) return Path.GetFullPath("build/avalonia-demo/cardvault.db");
-        var binary = executable ?? Environment.ProcessPath ?? throw new InvalidOperationException("无法定位应用目录");
+        var binary = executable ?? (OperatingSystem.IsWindows() ? Environment.GetEnvironmentVariable("CARDVAULT_LAUNCHER_PATH") : null)
+            ?? Environment.ProcessPath ?? throw new InvalidOperationException("无法定位应用目录");
         if (mac ?? OperatingSystem.IsMacOS())
             for (var dir = new DirectoryInfo(Path.GetDirectoryName(binary)!); dir != null; dir = dir.Parent)
                 if (dir.Name.EndsWith(".app", StringComparison.OrdinalIgnoreCase))

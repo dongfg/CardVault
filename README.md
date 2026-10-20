@@ -6,12 +6,11 @@
 
 ## Tag 发布
 
-推送 `v主版本.次版本.补丁号` tag 会触发 `.github/workflows/build-desktop.yml`，在对应系统上执行检查、Native AOT 发布和打包。三个平台全部成功后自动创建 GitHub Release，不覆盖已有 Release。
+推送 `v主版本.次版本.补丁号` tag 会触发 `.github/workflows/build-desktop.yml`，在对应系统上执行检查、Native AOT 发布和打包。Windows x64 和 macOS ARM64 全部成功后自动创建 GitHub Release，不覆盖已有 Release。
 
 | 平台 | Release 文件 |
 | --- | --- |
-| Windows x64 | `CardVault-windows-x64.zip`（解压后运行 `CardVault.exe`，保留同目录原生库） |
-| macOS Intel | `CardVault-macos-x64.dmg` |
+| Windows x64 | `CardVault-windows-x64.exe`（单文件，直接运行） |
 | macOS Apple Silicon | `CardVault-macos-arm64.dmg` |
 
 ```sh
@@ -23,7 +22,9 @@ git push origin v1.0.1
 
 分发包排除 `.pdb`、`.dbg`、`.dwarf` 和 macOS `.dSYM` 调试符号，保留必需的原生库。Native AOT 的精简运行时已编入主程序，不需要另外安装 .NET。
 
-普通 PR 检查由 `check-avalonia.yml` 执行，仅编译与运行存储检查，不打包。新增发布配置尚未在远端运行；本地没有创建或推送 tag。
+Windows 单文件 EXE 使用原生 C++ 启动器，内嵌 LZX 压缩的 AOT 主程序及依赖，启动时释放到 `%LOCALAPPDATA%/CardVault/cache/<内容哈希>`，复用并校验缓存，无需管理员权限。`cardvault.db` 和 `backups` 仍位于外层 EXE 同级；`CARDVAULT_DB_PATH` 路径覆盖与 `--demo` 独立演示继续生效。构建需要 Visual Studio x64 C++ 工具链，CI 使用已预装工具链的 Windows runner；上传前检查首次释放、缓存复用及含中文/空格路径的启动器运行。
+
+普通 PR 检查由 `check-avalonia.yml` 执行，仅编译与运行存储检查，不打包。本次单文件发布配置尚未在远端运行；本地没有创建或推送 tag。
 
 ## 运行
 

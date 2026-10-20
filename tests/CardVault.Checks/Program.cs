@@ -47,6 +47,19 @@ internal static class StorageChecks
             Check(CardStore.ResolvePath(null,false,Path.Combine(root,"CardVault.exe"),false)==db,"Windows portable database location");
             Check(CardStore.ResolvePath(null,false,Path.Combine(root,"CardVault.app","Contents","MacOS","CardVault"),true)==db,"macOS database beside app");
             Check(CardStore.ResolvePath(db,true)==db,"explicit database override");
+            if (OperatingSystem.IsWindows())
+            {
+                var previous = Environment.GetEnvironmentVariable("CARDVAULT_LAUNCHER_PATH");
+                try
+                {
+                    var outer = Path.Combine(root,"下载目录 with spaces","CardVault.exe");
+                    Environment.SetEnvironmentVariable("CARDVAULT_LAUNCHER_PATH",outer);
+                    Check(CardStore.ResolvePath(null,false)==Path.Combine(Path.GetDirectoryName(outer)!,"cardvault.db"),"single EXE database stays beside outer launcher");
+                    Check(CardStore.ResolvePath(db,false)==db,"database override takes priority over launcher");
+                    Check(CardStore.ResolvePath(null,true)==Path.GetFullPath("build/avalonia-demo/cardvault.db"),"launcher preserves isolated demo mode");
+                }
+                finally { Environment.SetEnvironmentVariable("CARDVAULT_LAUNCHER_PATH",previous); }
+            }
             Console.WriteLine($"{count} storage checks passed.");
         }
         finally { Directory.Delete(root,true); }
