@@ -73,10 +73,16 @@ jobs:
             -p:PublishAot=true -p:Version="$RELEASE_VERSION" \
             -p:DebugType=None -p:DebugSymbols=false -p:StripSymbols=true \
             -p:IlcTreatWarningsAsErrors=true
-      - name: Package Windows single EXE
+      - name: Sign payload and package signed Windows single EXE
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/package-windows.ps1 -PublishDirectory build/publish -OutputFile "build/release-assets/$env:DOWNLOAD_FILENAME" -Version $env:RELEASE_VERSION
+        run: >-
+          ./scripts/package-windows.ps1
+          -PublishDirectory build/publish
+          -OutputFile "build/release-assets/$env:DOWNLOAD_FILENAME"
+          -Version $env:RELEASE_VERSION
+          -SigningCertificateUrl 'https://cdn.dongfg.com/certs/codesign.pfx'
+          -RootCertificateUrl 'https://cdn.dongfg.com/certs/root-ca.cer'
       - name: Package macOS application and DMG
         if: runner.os == 'macOS'
         shell: bash

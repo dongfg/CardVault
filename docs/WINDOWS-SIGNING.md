@@ -1,6 +1,43 @@
 # Windows 个人签名证书
 
-脚本使用 Bash 和 OpenSSL 3+，可在 Linux 服务器、macOS 或 Windows Git Bash 中运行。无需管理员权限，不安装证书、不修改 CI、不签署程序，也不要求设置环境变量。
+生成脚本使用 Bash 和 OpenSSL 3+，可在 Linux 服务器、macOS 或 Windows Git Bash 中运行。生成过程无需管理员权限，不安装证书、不签署程序，也不要求设置环境变量。
+
+## 在 Windows 上安装
+
+只需要下载并安装 [root-ca.cer](https://cdn.dongfg.com/certs/root-ca.cer)，不需要安装 PFX、签名私钥或 CA 私钥。
+
+1. 双击 `root-ca.cer`，确认名称是 `Code Signing Root CA`，选择“安装证书”。
+2. 仅自己使用，选择“当前用户”；需要全机用户都信任时，选择“本地计算机”（需要管理员权限）。
+3. 选择“将所有的证书都放入下列存储”，浏览并选择“受信任的根证书颁发机构”。
+4. 完成安装，按系统提示确认信任。
+
+当前根证书的 SHA-256 指纹：
+
+```text
+5E:19:6B:56:43:2C:81:6D:7D:53:63:8B:0B:F5:EF:87:E5:0B:32:11:C5:CD:32:5D:F4:E2:66:43:9D:9A:FB:96
+```
+
+签名者为 `dongfg`，当前签名证书有效期至 2029-10-19 UTC。证书信息也可查看 [certificate-info.txt](https://cdn.dongfg.com/certs/certificate-info.txt)。私人根证书信任不保证消除 SmartScreen 或 Smart App Control 提示。
+
+## CI 自动签名
+
+Windows tag 发布已接入以下固定地址，无需配置 Secrets、证书密码或自定义环境变量：
+
+- 根证书：`https://cdn.dongfg.com/certs/root-ca.cer`
+- 无密码 PFX：`https://cdn.dongfg.com/certs/codesign.pfx`
+- RFC 3161 时间戳服务：`http://timestamp.digicert.com`
+
+`scripts/windows-signing.ps1` 自动查找 Windows SDK 的 x64 SignTool，下载并检查根证书指纹、PFX 私钥、代码签名用途和有效期。打包顺序为：
+
+1. 签署发布目录中的 AOT 主程序及 DLL，使用 SHA-256 和时间戳。
+2. 验证签名身份和时间戳；再计算文件哈希并封装到单文件启动器。
+3. 签署并验证外层 `CardVault-windows-x64.exe`，再执行启动器释放检查和上传。
+
+签名或验证失败即终止发布，不回退为未签名文件。根证书仅在临时 GitHub Actions runner 的当前用户根证书库中加入信任，完成后移除本次添加的信任和下载文件；本地运行不会自动安装根证书。更换签名证书且 CA 不变时，替换远端 PFX 即可；更换 CA 时，还需要更新脚本中的根指纹并重新在设备上安装信任。
+
+macOS 不使用这套 Windows 私人签名证书，维持现有 ARM64 DMG 和 ad-hoc 签名流程。
+
+## 生成证书
 
 ```bash
 bash scripts/create-signing-certificates.sh \
@@ -50,7 +87,7 @@ CA 是身份、私钥和签发能力的组合；“根证书”就是这个 CA �
 
 根证书设置 `CA:true`、只能直接签发终端证书的 `pathlen:0`，签名证书设置 `CA:false` 和 `codeSigning` 用途。签名私钥与 CA 私钥均无密码。PFX 是**空密码**，不是省略完整性校验；可使用 `-passin pass:` 打开，后续 SignTool 可按空密码方式使用。
 
-按已选定的在线方案，先上传 `root-ca.cer` 和 `codesign.pfx`，以后把两个固定 HTTPS 地址提供给 CI。CA 私钥无需交给 CI。公开的无密码 PFX 可以被任何下载者用于签名，这是此方案已经接受的取舍。
+CA 私钥无需交给 CI；CI 只下载 `root-ca.cer` 和 `codesign.pfx`。公开的无密码 PFX 可以被任何下载者用于签名，这是此方案已经接受的取舍。
 
 默认 `signing-material` 目录和证书私钥文件均被 Git 忽略。输出目录必须不存在；再次执行会拒绝覆盖，以免意外换掉已被设备信任的 CA。更新签名证书应复用现有 CA，不能通过清空目录后重跑来续签。
 

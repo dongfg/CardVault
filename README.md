@@ -26,7 +26,7 @@ Windows 单文件 EXE 使用原生 C++ 启动器，内嵌 LZX 压缩的 AOT 主�
 
 普通 PR 检查由 `check-avalonia.yml` 执行，仅编译与运行存储检查，不打包。本次单文件发布配置尚未在远端运行；本地没有创建或推送 tag。
 
-Windows 个人 CA、根证书与无密码签名 PFX 的生成脚本及参数见 [Windows 签名说明](docs/WINDOWS-SIGNING.md)。证书下载地址确定后再接入 CI。
+Windows tag 发布已从固定 CDN 地址获取个人代码签名 PFX，自动签署内部程序、DLL 和外层单文件 EXE，并添加时间戳。无需配置 Secrets 或证书密码；使用设备需要先安装 [CA 根证书](https://cdn.dongfg.com/certs/root-ca.cer)。安装步骤、身份信息和生成脚本见 [Windows 签名说明](docs/WINDOWS-SIGNING.md)。
 
 ## 运行
 

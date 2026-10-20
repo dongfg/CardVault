@@ -49,6 +49,8 @@ Windows 单文件封装由 `packaging/windows/Launcher.cpp` 和 `scripts/package
 
 CI 上传前会运行启动器自检查，覆盖首次释放、再次校验、中文/空格路径和重命名。该检查不打开 UI；应用的数据库路径规则由存储检查覆盖。本机缺少 Visual Studio C++ 工具链，尚未本地编译此启动器，也未推送 tag；完整封装验证将在 Windows CI 中执行。
 
+Windows tag 发布通过 `scripts/windows-signing.ps1` 下载固定 CDN 的空密码 PFX 和根证书，先签内部程序及原生库，再计算嵌入哈希，最后签外层 EXE；所有签名使用 SHA-256 和 RFC 3161 时间戳并验证。CI 不需要配置 Secrets；临时 runner 安装根信任供验证，结束后清理。设备安装根证书的步骤见 `WINDOWS-SIGNING.md`。
+
 `.github/workflows/check-avalonia.yml` 仍仅编译与运行存储检查。原有图标已迁移到 `src/CardVault/Assets`，源图与导出工具位于 `design/icons`，没有重新生成图标。
 
 ## 工程结构

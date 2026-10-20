@@ -1,7 +1,9 @@
 param(
     [Parameter(Mandatory)][string]$PublishDirectory,
     [Parameter(Mandatory)][string]$OutputFile,
-    [Parameter(Mandatory)][ValidatePattern('^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')][string]$Version
+    [Parameter(Mandatory)][ValidatePattern('^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')][string]$Version,
+    [uri]$SigningCertificateUrl = 'https://cdn.dongfg.com/certs/codesign.pfx',
+    [uri]$RootCertificateUrl = 'https://cdn.dongfg.com/certs/root-ca.cer'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,6 +30,14 @@ $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudi
 if (-not $installation) { throw 'Visual Studio x64 C++ toolchain was not found' }
 Import-Module (Join-Path $installation 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll')
 Enter-VsDevShell -VsInstallPath $installation -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
+
+. (Join-Path $PSScriptRoot 'windows-signing.ps1')
+$signing = $null
+try {
+    # Local signing uses an already trusted root; only CI temporarily adds trust.
+    $signing = New-WindowsSigningContext -CertificateUrl $SigningCertificateUrl -RootCertificateUrl $RootCertificateUrl -TrustRoot:($env:GITHUB_ACTIONS -eq 'true')
+    $payloadBinaries = @(Get-ChildItem -LiteralPath $published -File | Where-Object { $_.Extension -in @('.exe','.dll') })
+    Invoke-WindowsCodeSigning -Context $signing -FilePath $payloadBinaries.FullName
 
 $work = Join-Path (Split-Path -Parent $output) ('launcher-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
@@ -89,6 +99,7 @@ $compilerArguments = @('/nologo', '/std:c++17', '/O2', '/MT', '/EHsc', '/W4', '/
     '/link', '/SUBSYSTEM:WINDOWS', '/DYNAMICBASE', '/NXCOMPAT', '/OPT:REF', '/OPT:ICF', 'bcrypt.lib', 'setupapi.lib', 'shell32.lib', 'ole32.lib', 'user32.lib')
 & cl.exe @compilerArguments
 if ($LASTEXITCODE -ne 0) { throw 'Native launcher compilation failed' }
+Invoke-WindowsCodeSigning -Context $signing -FilePath $output
 # Fail CI before upload if extraction or hash verification is broken.
 $check = Start-Process -FilePath $output -ArgumentList '--launcher-check' -PassThru
 if (-not $check.WaitForExit(120000)) { $check.Kill(); throw 'Launcher self-check timed out' }
@@ -100,3 +111,6 @@ Copy-Item -LiteralPath $output -Destination $probeExecutable
 $warmCheck = Start-Process -FilePath $probeExecutable -ArgumentList '--launcher-check' -PassThru
 if (-not $warmCheck.WaitForExit(120000)) { $warmCheck.Kill(); throw 'Renamed launcher self-check timed out' }
 if ($warmCheck.ExitCode -ne 0) { throw 'Warm cache / Unicode path launcher self-check failed' }
+} finally {
+    if ($signing) { Close-WindowsSigningContext -Context $signing }
+}
